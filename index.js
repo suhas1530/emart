@@ -1,3 +1,25 @@
+// const express = require("express");
+// const mongoose = require("mongoose");
+// const cors = require("cors");
+// require("dotenv").config();
+
+// const app = express();
+
+// app.use(cors());
+// app.use(express.json());
+// app.use("/uploads", express.static("uploads"));
+
+// // MongoDB connection from .env
+// mongoose
+//   .connect(process.env.MONGO_URI)
+//   .then(() => console.log("MongoDB Connected"))
+//   .catch(err => console.error(err));
+
+// app.use("/api/brands", require("./routes/brandsroute"));
+
+// const PORT = process.env.PORT || 4000;
+// app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -17,12 +39,6 @@ app.use("/uploads", express.static("uploads"));
 //   "/uploads",
 //   express.static(path.join(__dirname, "uploads"))
 // );
-
-app.use(history());
-app.use(express.static(path.join(__dirname, "dist")));
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
-});
 
 // MongoDB connection from .env
 mongoose
