@@ -135,6 +135,10 @@ router.get('/product/:itemId', async (req, res) => {
 // GET /api/admin/vendor-quotes - Get all vendor quotes (with filtering & pagination)
 router.get(
   '/admin/vendor-quotes',
+  (req, res, next) => {
+    console.log('📍 GET /admin/vendor-quotes route hit');
+    next();
+  },
   requireAdmin,
   query('page').optional().isInt({ min: 1 }).toInt(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),

@@ -47,8 +47,8 @@ const app = express();
 // Security middleware
 app.use(helmetProtection);
 app.use(cors(corsOptions));
-app.use(sanitizeData);
-app.use(xssProtection);
+// app.use(sanitizeData); // Disabled: incompatible with Express 5.x
+// app.use(xssProtection); // Disabled: xss-clean incompatible with Express 5.x
 app.use(parameterPollutionPrevention);
 
 // Body parser with size limit
@@ -81,23 +81,22 @@ app.use("/api/banners", require("./routes/bannerRoutes"));
 // Testimonials
 app.use("/api/testimonials", require("./routes/testimonialRoutes"));
 
-// Vendor Quotes - PUBLIC endpoints
-app.post('/api/vendor/submit-quote', 
+// Vendor Quotes Routes
+app.use('/api/vendor', 
   trackIPSubmissions, 
-  quoteSubmissionLimiter, 
-  validateVendorInput, 
-  require('./routes/vendorroutes')
+  quoteSubmissionLimiter,
+  require('./routes/vendorroutes_new')
 );
 
-app.get('/api/vendor/quotes/:itemId', require('./routes/vendorroutes'));
-app.get('/api/vendor/product/:itemId', require('./routes/vendorroutes'));
-
-// Vendor Quotes - ADMIN endpoints
+// Admin Vendor Quotes Routes
 app.use('/api/admin/vendor-quotes', 
   adminOperationLimiter,
-  require('./routes/vendorroutes')
+  require('./routes/vendorroutes_new')
 );
-app.use('/api/vendor', require('./routes/vendorroutes'));
+
+// Basket Items - For vendor quote form
+app.use('/api/admin/basket-items', require('./routes/basketRoutes'));
+app.use('/api/admin/basket-item', require('./routes/basketRoutes'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -6,9 +6,12 @@ const { validationResult } = require('express-validator');
 // @access  Public
 exports.submitQuote = async (req, res) => {
   try {
+    console.log('📨 Received quote submission:', JSON.stringify(req.body, null, 2));
+    
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({ 
         success: false, 
         message: 'Validation failed',
@@ -18,18 +21,24 @@ exports.submitQuote = async (req, res) => {
 
     const { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks } = req.body;
 
+    console.log('📋 Processing:', { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks });
+
     // Additional validation
     if (!itemId || !vendorName || !vendorEmail || quotedPrice === undefined) {
+      console.log('❌ Missing required fields');
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields',
+        received: { itemId, vendorName, vendorEmail, quotedPrice }
       });
     }
 
-    if (quotedPrice < 0) {
+    const numPrice = parseFloat(quotedPrice);
+    if (isNaN(numPrice) || numPrice < 0) {
+      console.log('❌ Invalid price:', quotedPrice);
       return res.status(400).json({
         success: false,
-        message: 'Price cannot be negative'
+        message: 'Price must be a valid positive number'
       });
     }
 
@@ -44,6 +53,7 @@ exports.submitQuote = async (req, res) => {
     });
 
     if (recentSubmissions >= 5) {
+      console.log('⚠️ Rate limit exceeded for IP:', ipAddress);
       return res.status(429).json({
         success: false,
         message: 'Rate limit exceeded. Maximum 5 quotes per hour allowed.',
@@ -57,7 +67,7 @@ exports.submitQuote = async (req, res) => {
       vendorName: vendorName.trim().substring(0, 100),
       vendorEmail: vendorEmail.toLowerCase().trim(),
       vendorPhone: vendorPhone ? vendorPhone.trim() : null,
-      quotedPrice: parseFloat(quotedPrice),
+      quotedPrice: numPrice,
       remarks: remarks ? remarks.trim().substring(0, 500) : null,
       ipAddress,
       status: 'pending',
@@ -66,9 +76,7 @@ exports.submitQuote = async (req, res) => {
 
     // Save to database
     await quote.save();
-
-    // Fetch product name to store with quote (if available in future)
-    // This is for record-keeping purposes
+    console.log('✅ Quote saved successfully:', quote._id);
 
     return res.status(201).json({
       success: true,
@@ -85,7 +93,8 @@ exports.submitQuote = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error submitting quote:', error);
+    console.error('❌ Error submitting quote:', error.message);
+    console.error('Stack:', error.stack);
     return res.status(500).json({
       success: false,
       message: 'Error submitting quote',

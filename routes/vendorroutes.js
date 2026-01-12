@@ -1,100 +1,129 @@
-// routes/vendorQuotes.js
+// routes/vendorroutes.js - Vendor Quote Routes
 const express = require('express');
 const router = express.Router();
-const VendorQuote = require('../models/VendorQuote');
-const axios = require('axios');
+const { body, query, param, validationResult } = require('express-validator');
+const vendorQuoteController = require('../controllers/vendorQuoteController');
 
-// Get product info from external API
+// VALIDATION MIDDLEWARE
+const validateQuoteSubmission = [
+  body('itemId')
+    .trim()
+    .notEmpty().withMessage('Item ID is required')
+    .isLength({ min: 5 }).withMessage('Invalid item ID'),
+  body('vendorName')
+    .trim()
+    .notEmpty().withMessage('Vendor name is required')
+    .isLength({ min: 2, max: 100 }).withMessage('Vendor name must be 2-100 characters')
+    .matches(/^[a-zA-Z0-9\s\-._&()]*$/).withMessage('Vendor name contains invalid characters'),
+  body('vendorEmail')
+    .trim()
+    .toLowerCase()
+    .isEmail().withMessage('Invalid email address'),
+  body('vendorPhone')
+    .optional()
+    .trim()
+    .matches(/^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/)
+    .withMessage('Invalid phone number'),
+  body('quotedPrice')
+    .notEmpty().withMessage('Quoted price is required')
+    .isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+  body('remarks')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Remarks cannot exceed 500 characters'),
+  body('termsAccepted')
+    .optional()
+    .isBoolean().withMessage('Terms acceptance must be boolean')
+];
+
+const validateStatusUpdate = [
+  param('quoteId')
+    .isMongoId().withMessage('Invalid quote ID'),
+  body('status')
+    .notEmpty().withMessage('Status is required')
+    .isIn(['pending', 'reviewed', 'accepted', 'rejected']).withMessage('Invalid status'),
+  body('adminNotes')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 }).withMessage('Admin notes cannot exceed 1000 characters'),
+  body('rejectionReason')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Rejection reason cannot exceed 500 characters')
+];
+
+// ==================== PUBLIC ROUTES ====================
+
+// @route   POST /api/vendor/submit-quote
+// @desc    Submit a new vendor quote
+// @access  Public
+router.post('/submit-quote', validateQuoteSubmission, vendorQuoteController.submitQuote);
+
+// @route   GET /api/vendor/quotes/:itemId
+// @desc    Get all quotes for a specific item
+// @access  Public (Vendor Portal)
+router.get('/quotes/:itemId', 
+  param('itemId').trim().notEmpty().withMessage('Item ID is required'),
+  vendorQuoteController.getQuotesForItem
+);
+
+// @route   GET /api/vendor/product/:itemId
+// @desc    Get product info for vendor portal
+// @access  Public
 router.get('/product/:itemId', async (req, res) => {
   try {
-    // Fetch from external API
-    const response = await axios.get(
-      `https://other-userpanel.basavamart.com/api/basket-items/${req.params.itemId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.EXTERNAL_API_TOKEN}`
-        }
-      }
-    );
+    const { itemId } = req.params;
     
-    // Return vendor-safe data
-    const product = response.data;
-    const safeData = {
-      _id: product._id,
-      productName: product.productName,
-      productImage: product.productImage,
-      variant: product.variant,
-      quantity: product.quantity,
-      memberNote: product.memberNote,
-      memberMessage: product.memberMessage,
-      createdAt: product.createdAt
-    };
-    
-    res.json({ success: true, product: safeData });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Get all quotes for a product (from our own collection)
-router.get('/quotes/:itemId', async (req, res) => {
-  try {
-    const quotes = await VendorQuote.find({ 
-      externalItemId: req.params.itemId,
-      status: { $ne: 'rejected' } // Filter out rejected quotes
-    })
-    .sort({ quotedPrice: 1, submittedAt: -1 })
-    .lean();
-    
-    res.json({ success: true, quotes });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Submit new quote (store in our collection)
-router.post('/submit-quote', async (req, res) => {
-  try {
-    const { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks } = req.body;
-    
-    // Check if vendor already submitted a quote for this item
-    const existingQuote = await VendorQuote.findOne({
-      externalItemId: itemId,
-      vendorEmail: vendorEmail
-    });
-    
-    let quote;
-    
-    if (existingQuote) {
-      // Update existing quote
-      existingQuote.quotedPrice = quotedPrice;
-      existingQuote.remarks = remarks;
-      existingQuote.submittedAt = new Date();
-      await existingQuote.save();
-      quote = existingQuote;
-    } else {
-      // Create new quote
-      quote = new VendorQuote({
-        externalItemId: itemId,
-        vendorName,
-        vendorEmail,
-        vendorPhone,
-        quotedPrice,
-        remarks
+    if (!itemId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Item ID is required'
       });
-      await quote.save();
     }
     
-    // Optional: Notify admin via webhook
-    notifyAdminNewQuote(itemId, quote);
+    // Try to fetch from internal API
+    const axios = require('axios');
+    try {
+      const response = await axios.get(
+        `${process.env.INTERNAL_API_URL || 'http://localhost:5000'}/api/admin/basket-items`
+      );
+      
+      if (response.data.success && response.data.items) {
+        const product = response.data.items.find(item => item._id === itemId);
+        
+        if (product) {
+          return res.json({
+            success: true,
+            product: {
+              _id: product._id,
+              productName: product.productName,
+              productImage: product.productImage,
+              variant: product.variant || { name: 'Standard' },
+              quantity: product.quantity,
+              memberNote: product.memberNote || '',
+              memberMessage: product.memberMessage || '',
+              createdAt: product.createdAt
+            }
+          });
+        }
+      }
+    } catch (axiosError) {
+      console.error('Axios error:', axiosError.message);
+    }
     
-    res.json({
-      success: true,
-      message: 'Quote submitted successfully',
-      quote: quote.toObject()
+    // If not found, return error
+    return res.status(404).json({
+      success: false,
+      message: 'Product not found'
     });
+    
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error fetching product:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching product',
+      error: error.message
+    });
   }
 });
 
