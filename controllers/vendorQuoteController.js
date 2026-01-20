@@ -1,4 +1,5 @@
 const VendorQuote = require('../models/VendorQuote');
+const BasketItem = require('../models/BasketItem');
 const { validationResult } = require('express-validator');
 
 // @desc    Submit a new vendor quote
@@ -7,6 +8,8 @@ const { validationResult } = require('express-validator');
 exports.submitQuote = async (req, res) => {
   try {
     console.log('📨 Received quote submission:', JSON.stringify(req.body, null, 2));
+    // Temporary debug log for body (requested)
+    console.log(req.body);
     
     // Check for validation errors
     const errors = validationResult(req);
@@ -19,7 +22,7 @@ exports.submitQuote = async (req, res) => {
       });
     }
 
-    const { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks } = req.body;
+    const { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks, productName: productNameReq, productImage: productImageReq } = req.body;
 
     console.log('📋 Processing:', { itemId, vendorName, vendorEmail, vendorPhone, quotedPrice, remarks });
 
@@ -61,9 +64,28 @@ exports.submitQuote = async (req, res) => {
       });
     }
 
+    // Attempt to get product details from BasketItem, fall back to req.body
+    let productNameFinal = productNameReq || null;
+    let productImageFinal = productImageReq || null;
+
+    try {
+      if (itemId) {
+        const basketItem = await BasketItem.findById(itemId).lean();
+        if (basketItem) {
+          productNameFinal = basketItem.productName || productNameFinal;
+          productImageFinal = basketItem.productImage || productImageFinal;
+        }
+      }
+    } catch (lookupErr) {
+      // If lookup fails, just log and continue with fallback values from req.body
+      console.warn('⚠️ BasketItem lookup failed, using provided values if any:', lookupErr.message);
+    }
+
     // Create new quote
     const quote = new VendorQuote({
       itemId,
+      productName: productNameFinal ? String(productNameFinal).trim().substring(0, 200) : null,
+      productImage: productImageFinal ? String(productImageFinal).trim() : null,
       vendorName: vendorName.trim().substring(0, 100),
       vendorEmail: vendorEmail.toLowerCase().trim(),
       vendorPhone: vendorPhone ? vendorPhone.trim() : null,

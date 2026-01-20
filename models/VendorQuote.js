@@ -17,6 +17,11 @@ const vendorQuoteSchema = new mongoose.Schema(
       trim: true,
       default: null
     },
+    productImage: {
+      type: String,
+      trim: true,
+      default: null
+    },
 
     // Vendor Information
     vendorName: {
