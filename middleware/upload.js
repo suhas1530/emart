@@ -25,17 +25,31 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter to accept only images
+// File filter to accept images for image fields and documents for catalog field
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp|bmp|tiff/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  
-  if (mimetype && extname) {
-    return cb(null, true);
-  } else {
-    cb(new Error('Error: Only image files are allowed! (jpeg, jpg, png, gif, webp, bmp, tiff)'));
+  const imagesRegex = /jpeg|jpg|png|gif|webp|bmp|tiff/;
+  const docsRegex = /pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/;
+
+  const ext = path.extname(file.originalname).toLowerCase();
+  const mimetype = (file.mimetype || '').toLowerCase();
+
+  // Allow catalogs (pdf, doc, docx, xls, xlsx) on the 'catalog' field
+  if (file.fieldname === 'catalog') {
+    const allowedExt = /\.pdf|\.doc|\.docx|\.xls|\.xlsx/;
+    if (allowedExt.test(ext) || docsRegex.test(mimetype)) {
+      return cb(null, true);
+    }
+    return cb(new Error('Error: Only catalog files are allowed (pdf, doc, docx, xls, xlsx)'));
   }
+
+  // For all other fields (images), accept image types
+  const isImageExt = imagesRegex.test(ext);
+  const isImageMime = imagesRegex.test(mimetype);
+  if (isImageExt || isImageMime) {
+    return cb(null, true);
+  }
+
+  cb(new Error('Error: Only image files are allowed for image fields (jpeg, jpg, png, gif, webp, bmp, tiff)'));
 };
 
 module.exports = multer({ 
