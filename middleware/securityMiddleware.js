@@ -211,9 +211,7 @@ const errorHandler = (err, req, res, next) => {
 // CORS configuration
 const corsOptions = {
   origin: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://basavamart.com',
+    'https://emart.basavamart.com',
     'https://admin.basavamart.com',
     'https://userpanel.basavamart.com'
   ],
