@@ -1,126 +1,106 @@
-// const express = require("express");
-// const mongoose = require("mongoose");
-// const cors = require("cors");
-// require("dotenv").config();
-
-// const app = express();
-
-// app.use(cors());
-// app.use(express.json());
-// app.use("/uploads", express.static("uploads"));
-
-// // MongoDB connection from .env
-// mongoose
-//   .connect(process.env.MONGO_URI)
-//   .then(() => console.log("MongoDB Connected"))
-//   .catch(err => console.error(err));
-
-// app.use("/api/brands", require("./routes/brandsroute"));
-
-// const PORT = process.env.PORT || 4000;
-// app.listen(PORT, () => console.log(`Server running on ${PORT}`));
-
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config();
 const path = require("path");
+require("dotenv").config();
 
-// Import security middleware
+/* ================= SECURITY MIDDLEWARE ================= */
 const {
   quoteSubmissionLimiter,
   apiLimiter,
   adminOperationLimiter,
-  sanitizeData,
-  xssProtection,
   parameterPollutionPrevention,
   helmetProtection,
-  validateVendorInput,
   trackIPSubmissions,
   errorHandler,
   corsOptions
-} = require('./middleware/securityMiddleware');
+} = require("./middleware/securityMiddleware");
 
 const app = express();
 
-// Security middleware
+/* ===== REQUIRED FOR NGINX / PROXY / RATE-LIMIT ===== */
+app.set("trust proxy", 1);
+
+/* ================= SECURITY ================= */
 app.use(helmetProtection);
 app.use(cors(corsOptions));
-// app.use(sanitizeData); // Disabled: incompatible with Express 5.x
-// app.use(xssProtection); // Disabled: xss-clean incompatible with Express 5.x
 app.use(parameterPollutionPrevention);
 
-// Body parser with size limit
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+/* ================= BODY PARSER ================= */
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Static files
-app.use("/uploads", express.static("uploads"));
+/* ================= STATIC UPLOADS ================= */
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// MongoDB connection from .env
+/* ================= DATABASE ================= */
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.error("MongoDB connection error:", err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
 
-// ==================== Routes ====================
+/* ================= API LIMITER ================= */
+app.use("/api", apiLimiter);
 
-// API limiter for all routes
-app.use('/api/', apiLimiter);
-
-// Brands
+/* ================= API ROUTES ================= */
 app.use("/api/brands", require("./routes/brandsroute"));
-
-// Advertisements
 app.use("/api/ads", require("./routes/advertisementRoutes"));
-
-// Banners
 app.use("/api/banners", require("./routes/bannerRoutes"));
-
-// Testimonials
 app.use("/api/testimonials", require("./routes/testimonialRoutes"));
 
-// Vendor Quotes Routes
-app.use('/api/vendor', 
-  trackIPSubmissions, 
+app.use(
+  "/api/vendor",
+  trackIPSubmissions,
   quoteSubmissionLimiter,
-  require('./routes/vendorroutes_new')
+  require("./routes/vendorroutes_new")
 );
 
-// Admin Vendor Quotes Routes
-app.use('/api/admin/vendor-quotes', 
+app.use(
+  "/api/admin/vendor-quotes",
   adminOperationLimiter,
-  require('./routes/vendorroutes_new')
+  require("./routes/vendorroutes_new")
 );
 
-// Basket Items - For vendor quote form
-app.use('/api/admin/basket-items', require('./routes/basketRoutes'));
-app.use('/api/admin/basket-item', require('./routes/basketRoutes'));
+app.use("/api/admin/basket-items", require("./routes/basketRoutes"));
+app.use("/api/admin/basket-item", require("./routes/basketRoutes"));
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
+/* ================= HEALTH CHECK ================= */
+app.get("/api/health", (req, res) => {
   res.json({
     success: true,
-    message: 'Server is running',
+    message: "Server is running",
     timestamp: new Date(),
     uptime: process.uptime()
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found'
+/* ================= FRONTEND (EXPRESS 5 SAFE) ================= */
+
+// Your confirmed path:
+// /home/cruvzadmin/Testing/emart/dist
+const distPath = path.join(__dirname, "dist");
+
+// Serve frontend static files
+app.use(express.static(distPath));
+
+// SPA fallback — NO wildcard, Express 5 safe
+app.use((req, res, next) => {
+  // Skip API and uploads
+  if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
+    return next();
+  }
+
+  res.sendFile(path.join(distPath, "index.html"), err => {
+    if (err) next(err);
   });
 });
 
-// Error handling middleware (must be last)
+/* ================= ERROR HANDLER ================= */
 app.use(errorHandler);
 
+/* ================= SERVER ================= */
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
