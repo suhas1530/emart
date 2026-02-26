@@ -11,19 +11,18 @@ const {
   adminOperationLimiter,
   parameterPollutionPrevention,
   helmetProtection,
-  trackIPSubmissions,
   errorHandler,
   corsOptions
 } = require("./middleware/securityMiddleware");
 
 const app = express();
 
-/* ===== REQUIRED FOR NGINX / PROXY / RATE-LIMIT ===== */
+/* ===== REQUIRED FOR NGINX / PROXY ===== */
 app.set("trust proxy", 1);
 
 /* ================= SECURITY ================= */
-app.use(helmetProtection);
 app.use(cors(corsOptions));
+app.use(helmetProtection);
 app.use(parameterPollutionPrevention);
 
 /* ================= BODY PARSER ================= */
@@ -31,7 +30,16 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 /* ================= STATIC UPLOADS ================= */
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), {
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+    },
+  })
+);
 
 /* ================= DATABASE ================= */
 mongoose
@@ -48,13 +56,14 @@ app.use("/api/ads", require("./routes/advertisementRoutes"));
 app.use("/api/banners", require("./routes/bannerRoutes"));
 app.use("/api/testimonials", require("./routes/testimonialRoutes"));
 
+/* ================= VENDOR ROUTES ================= */
 app.use(
   "/api/vendor",
-  trackIPSubmissions,
   quoteSubmissionLimiter,
   require("./routes/vendorroutes_new")
 );
 
+/* ================= ADMIN ROUTES ================= */
 app.use(
   "/api/admin/vendor-quotes",
   adminOperationLimiter,
@@ -63,6 +72,31 @@ app.use(
 
 app.use("/api/admin/basket-items", require("./routes/basketRoutes"));
 app.use("/api/admin/basket-item", require("./routes/basketRoutes"));
+
+/* ================= 🔧 FIX: ADMIN VENDOR QUOTES GET ================= */
+/* This fixes: Cannot GET /api/admin/vendor-quotes */
+app.get(
+  "/api/admin/vendor-quotes",
+  adminOperationLimiter,
+  async (req, res) => {
+    try {
+      const VendorQuote = require("./models/VendorQuote");
+
+      const quotes = await VendorQuote.find().sort({ createdAt: -1 });
+
+      res.json({
+        success: true,
+        quotes
+      });
+    } catch (error) {
+      console.error("Admin vendor quotes fetch error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch vendor quotes"
+      });
+    }
+  }
+);
 
 /* ================= HEALTH CHECK ================= */
 app.get("/api/health", (req, res) => {
@@ -74,25 +108,16 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-/* ================= FRONTEND (EXPRESS 5 SAFE) ================= */
-
-// Your confirmed path:
-// /home/cruvzadmin/Testing/emart/dist
+/* ================= FRONTEND ================= */
 const distPath = path.join(__dirname, "dist");
 
-// Serve frontend static files
 app.use(express.static(distPath));
 
-// SPA fallback — NO wildcard, Express 5 safe
 app.use((req, res, next) => {
-  // Skip API and uploads
   if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
     return next();
   }
-
-  res.sendFile(path.join(distPath, "index.html"), err => {
-    if (err) next(err);
-  });
+  res.sendFile(path.join(distPath, "index.html"));
 });
 
 /* ================= ERROR HANDLER ================= */
@@ -100,7 +125,8 @@ app.use(errorHandler);
 
 /* ================= SERVER ================= */
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
+

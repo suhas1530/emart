@@ -1,8 +1,9 @@
 const VendorQuote = require('../models/VendorQuote');
+const VendorQuoteRequest = require('../models/VendorQuoteRequest');
 const BasketItem = require('../models/BasketItem');
 const { validationResult } = require('express-validator');
 
-// @desc    Submit a new vendor quote
+// @desc    Submit a new vendor quote (single item - legacy flow)
 // @route   POST /api/vendor/submit-quote
 // @access  Public
 exports.submitQuote = async (req, res) => {
@@ -624,3 +625,288 @@ exports.bulkUpdateStatus = async (req, res) => {
     });
   }
 };
+
+// ==================== MULTI-ITEM QUOTE REQUESTS ====================
+
+// @desc    Create a new multi-item vendor quote request (admin)
+// @route   POST /api/admin/vendor-quote-requests
+// @access  Private (Admin)
+exports.createMultiItemQuoteRequest = async (req, res) => {
+  try {
+    const { orderId, vendorId, vendorName, vendorEmail, items, tokenExpiryMinutes = 60 } = req.body;
+
+    if (!orderId || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderId and at least one item are required'
+      });
+    }
+
+    // Basic item validation (productId, requestedQty > 0, no duplicates)
+    const seen = new Set();
+    for (const item of items) {
+      if (!item.productId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each item must include a productId'
+        });
+      }
+      if (!item.requestedQty || item.requestedQty <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each item must have requestedQty > 0'
+        });
+      }
+      const key = `${item.productId}::${item.variantId || ''}`;
+      if (seen.has(key)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Duplicate product/variant combinations are not allowed'
+        });
+      }
+      seen.add(key);
+    }
+
+    // Generate secure random token
+    const { randomUUID } = require('crypto');
+    const token = randomUUID();
+
+    const expiresAt = new Date(Date.now() + tokenExpiryMinutes * 60 * 1000);
+
+    const normalizedItems = items.map(it => ({
+      productId: String(it.productId).trim(),
+      variantId: it.variantId ? String(it.variantId).trim() : null,
+      productName: it.productName ? String(it.productName).trim().substring(0, 200) : null,
+      variantName: it.variantName ? String(it.variantName).trim().substring(0, 100) : null,
+      image: it.image ? String(it.image).trim() : null,
+      requestedQty: Number(it.requestedQty),
+      vendorPrice: null,
+      vendorRemark: null
+    }));
+
+    const quoteRequest = await VendorQuoteRequest.create({
+      orderId: String(orderId).trim(),
+      vendorId: vendorId ? String(vendorId).trim() : null,
+      vendorName: vendorName ? String(vendorName).trim().substring(0, 100) : null,
+      vendorEmail: vendorEmail ? String(vendorEmail).toLowerCase().trim() : null,
+      items: normalizedItems,
+      status: 'pending',
+      token,
+      tokenExpiresAt: expiresAt
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Vendor quote request created',
+      request: quoteRequest,
+      token
+    });
+  } catch (error) {
+    console.error('❌ Error creating multi-item quote request:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error creating quote request',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get quote request details for vendor by token
+// @route   GET /api/vendor/quote-request/:token
+// @access  Public
+exports.getMultiItemQuoteByToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const requestDoc = await VendorQuoteRequest.findOne({ token }).lean();
+
+    if (!requestDoc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quote request not found'
+      });
+    }
+
+    const isExpired = !requestDoc.tokenExpiresAt || requestDoc.tokenExpiresAt <= new Date();
+    const alreadySubmitted = requestDoc.status === 'submitted';
+
+    if (isExpired || alreadySubmitted) {
+      return res.status(410).json({
+        success: false,
+        message: alreadySubmitted ? 'Quote already submitted' : 'Quote request has expired',
+        status: alreadySubmitted ? 'submitted' : 'expired'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      request: {
+        _id: requestDoc._id,
+        orderId: requestDoc.orderId,
+        vendorId: requestDoc.vendorId,
+        vendorName: requestDoc.vendorName,
+        vendorEmail: requestDoc.vendorEmail,
+        items: requestDoc.items,
+        status: requestDoc.status,
+        tokenExpiresAt: requestDoc.tokenExpiresAt,
+        createdAt: requestDoc.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching quote request by token:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching quote request',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Vendor submits prices for multi-item quote request
+// @route   POST /api/vendor/quote-request/:token/submit
+// @access  Public
+exports.submitMultiItemQuote = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Items array is required'
+      });
+    }
+
+    const requestDoc = await VendorQuoteRequest.findOne({ token });
+
+    if (!requestDoc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quote request not found'
+      });
+    }
+
+    if (!requestDoc.isTokenValid()) {
+      return res.status(410).json({
+        success: false,
+        message: requestDoc.status === 'submitted' ? 'Quote already submitted' : 'Quote request has expired'
+      });
+    }
+
+    // Map incoming prices by product/variant key
+    const priceMap = new Map();
+    for (const it of items) {
+      if (!it.productId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each submitted item must include a productId'
+        });
+      }
+      if (it.vendorPrice === undefined || it.vendorPrice === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each submitted item must include vendorPrice'
+        });
+      }
+      const priceNum = Number(it.vendorPrice);
+      if (!Number.isFinite(priceNum) || priceNum <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'vendorPrice must be greater than 0'
+        });
+      }
+      const key = `${it.productId}::${it.variantId || ''}`;
+      priceMap.set(key, {
+        price: priceNum,
+        remark: it.vendorRemark ? String(it.vendorRemark).trim().substring(0, 500) : null
+      });
+    }
+
+    // Update items in the request
+    requestDoc.items = requestDoc.items.map(existing => {
+      const key = `${existing.productId}::${existing.variantId || ''}`;
+      const submitted = priceMap.get(key);
+      if (!submitted) {
+        return existing;
+      }
+      return {
+        ...existing.toObject(),
+        vendorPrice: submitted.price,
+        vendorRemark: submitted.remark
+      };
+    });
+
+    requestDoc.status = 'submitted';
+    requestDoc.submittedAt = new Date();
+
+    await requestDoc.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Quote submitted successfully',
+      request: requestDoc
+    });
+  } catch (error) {
+    console.error('❌ Error submitting multi-item quote:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error submitting quote',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Admin: list multi-item quote requests
+// @route   GET /api/admin/vendor-quote-requests
+// @access  Private (Admin)
+exports.getAdminMultiItemQuotes = async (req, res) => {
+  try {
+    const { orderId, status, page = 1, limit = 20 } = req.query;
+
+    const query = {};
+    if (orderId) query.orderId = orderId;
+    if (status && ['pending', 'submitted'].includes(status)) {
+      query.status = status;
+    }
+
+    const pageNum = parseInt(page, 10) || 1;
+    const pageSize = Math.min(parseInt(limit, 10) || 20, 100);
+    const skip = (pageNum - 1) * pageSize;
+
+    const [requests, total] = await Promise.all([
+      VendorQuoteRequest.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean(),
+      VendorQuoteRequest.countDocuments(query)
+    ]);
+
+    // Compute totals for each request
+    const enriched = requests.map(r => {
+      const totalAmount = (r.items || [])
+        .filter(it => typeof it.vendorPrice === 'number')
+        .reduce((sum, it) => sum + it.vendorPrice * (it.requestedQty || 1), 0);
+      return { ...r, totalAmount };
+    });
+
+    return res.status(200).json({
+      success: true,
+      requests: enriched,
+      pagination: {
+        page: pageNum,
+        limit: pageSize,
+        total,
+        pages: Math.ceil(total / pageSize)
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching admin multi-item quotes:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching multi-item quotes',
+      error: error.message
+    });
+  }
+};
+

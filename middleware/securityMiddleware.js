@@ -9,7 +9,7 @@ const hpp = require('hpp');
 // Rate limiter for quote submissions (public endpoint)
 const quoteSubmissionLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 requests per hour per IP
+  max: 50, // TEMPORARILY INCREASED FOR TESTING - Change back to 5 in production
   message: 'Too many quote submissions from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -130,10 +130,10 @@ const trackIPSubmissions = (req, res, next) => {
   const submissions = ipSubmissionCache.get(ip);
   const recentSubmissions = submissions.filter(time => time > oneHourAgo);
 
-  if (recentSubmissions.length >= 5) {
+  if (recentSubmissions.length >= 50) { // TEMPORARILY INCREASED FOR TESTING - Change back to 5
     return res.status(429).json({
       success: false,
-      message: 'Rate limit exceeded. Maximum 5 submissions per hour.',
+      message: 'Rate limit exceeded. Maximum 50 submissions per hour.',
       retryAfter: Math.ceil((recentSubmissions[0] + 3600000 - now) / 1000)
     });
   }
@@ -210,11 +210,26 @@ const errorHandler = (err, req, res, next) => {
 
 // CORS configuration
 const corsOptions = {
-  origin: [
-    'https://emart.basavamart.com',
-    'https://admin.basavamart.com',
-    'https://userpanel.basavamart.com'
-  ],
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      // Production
+      'https://emart.basavamart.com',
+      'https://admin.basavamart.com',
+      'https://userpanel.basavamart.com',
+      // Local development
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000'
+    ];
+    // Allow requests with no origin (e.g. mobile apps, Postman, curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: Origin '${origin}' not allowed`));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
