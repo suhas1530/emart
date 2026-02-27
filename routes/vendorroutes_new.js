@@ -474,6 +474,27 @@ router.get(
   vendorQuoteController.getAdminQuotes
 );
 
+// GET /api/admin/vendor-quotes/stats/summary - Get statistics
+// NOTE: Must be defined BEFORE /:quoteId to avoid being swallowed by the param route
+router.get(
+  '/admin/vendor-quotes/stats/summary',
+  requireAdmin,
+  query('itemId').optional().trim(),
+  query('startDate').optional().isISO8601(),
+  query('endDate').optional().isISO8601(),
+  vendorQuoteController.getQuotesStatistics
+);
+
+// GET /api/admin/vendor-quotes/export/csv - Export to CSV
+// NOTE: Must be defined BEFORE /:quoteId to avoid being swallowed by the param route
+router.get(
+  '/admin/vendor-quotes/export/csv',
+  requireAdmin,
+  query('itemId').optional().trim(),
+  query('status').optional().isIn(['pending', 'reviewed', 'accepted', 'rejected']),
+  vendorQuoteController.exportQuotesToCSV
+);
+
 // GET /api/admin/vendor-quotes/:quoteId - Get a specific quote
 router.get(
   '/admin/vendor-quotes/:quoteId',
@@ -510,24 +531,8 @@ router.delete(
   vendorQuoteController.deleteQuote
 );
 
-// GET /api/admin/vendor-quotes/stats/summary - Get statistics
-router.get(
-  '/admin/vendor-quotes/stats/summary',
-  requireAdmin,
-  query('itemId').optional().trim(),
-  query('startDate').optional().isISO8601(),
-  query('endDate').optional().isISO8601(),
-  vendorQuoteController.getQuotesStatistics
-);
-
-// GET /api/admin/vendor-quotes/export/csv - Export to CSV
-router.get(
-  '/admin/vendor-quotes/export/csv',
-  requireAdmin,
-  query('itemId').optional().trim(),
-  query('status').optional().isIn(['pending', 'reviewed', 'accepted', 'rejected']),
-  vendorQuoteController.exportQuotesToCSV
-);
+// NOTE: stats/summary and export/csv have been moved BEFORE /:quoteId above
+// to prevent them from being incorrectly matched as a quoteId parameter.
 
 // POST /api/admin/vendor-quotes/bulk/status - Bulk update status
 router.post(

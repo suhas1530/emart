@@ -100,8 +100,8 @@ const vendorQuoteRequestSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: {
-        values: ['pending', 'submitted'],
-        message: 'Status must be either "pending" or "submitted"',
+        values: ['pending', 'submitted', 'approved', 'accepted', 'rejected'],
+        message: 'Status must be one of: pending, submitted, approved, accepted, rejected',
       },
       default: 'pending',
       index: true,
