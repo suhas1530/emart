@@ -152,8 +152,8 @@ router.get('/product/:itemId', async (req, res) => {
 // showing all vendor quotes per product. Sorted by latest createdAt.
 router.get('/vendor-quotes', async (req, res) => {
   try {
-    // Fetch all VendorQuoteRequest documents, sorted newest first
-    const requests = await VendorQuoteRequest.find({})
+    // Fetch all SUBMITTED VendorQuoteRequest documents (exclude pending templates)
+    const requests = await VendorQuoteRequest.find({ status: { $ne: 'pending' } })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -186,6 +186,22 @@ router.get('/vendor-quotes', async (req, res) => {
         orderEntry._id = req._id;
       }
 
+      // Recover vendor name if missing
+      let recoveredName = req.vendorName;
+      if (!recoveredName && req.vendorEmail) {
+        const match = await VendorQuoteRequest.findOne({
+          vendorEmail: req.vendorEmail,
+          vendorName: { $nin: [null, ''] }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+
+        if (match) {
+          recoveredName = match.vendorName;
+        } else {
+          // Fallback to email prefix
+          recoveredName = req.vendorEmail.split('@')[0];
+        }
+      }
+
       // Add vendor quote to each product in this request
       for (const item of (req.items || [])) {
         const productKey = `${item.productId}::${item.variantId || ''}`;
@@ -206,7 +222,7 @@ router.get('/vendor-quotes', async (req, res) => {
         productEntry.vendorQuotes.push({
           requestId: req._id,           // VendorQuoteRequest doc ID for status updates
           vendorId: req.vendorId || null,
-          vendorName: req.vendorName || 'Unknown Vendor',
+          vendorName: recoveredName || 'Unknown Vendor',
           vendorEmail: req.vendorEmail || null,
           price: item.vendorPrice ?? null,
           message: item.vendorRemark || '',
@@ -281,6 +297,9 @@ router.patch('/vendor-quote-requests/:requestId/status', async (req, res) => {
   }
 });
 
+// PATCH /api/vendor-quote-requests/:id - Update vendor info (name, email, phone)
+router.patch('/vendor-quote-requests/:id', vendorQuoteController.updateVendorQuoteRequest);
+
 // GET /api/vendor-quotes/:id - Get a single vendor quote by ID (supports both VendorQuoteRequest and VendorQuote)
 router.get('/vendor-quotes/:id', async (req, res) => {
   try {
@@ -294,6 +313,26 @@ router.get('/vendor-quotes/:id', async (req, res) => {
     let requestDoc = await VendorQuoteRequest.findById(id).lean();
 
     if (requestDoc) {
+      let recoveredVendorName = requestDoc.vendorName;
+      if (!recoveredVendorName && requestDoc.vendorEmail) {
+        const prev = await VendorQuoteRequest.findOne({
+          vendorEmail: requestDoc.vendorEmail,
+          vendorName: { $ne: null, $ne: '' }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+        if (prev) recoveredVendorName = prev.vendorName;
+        else {
+          const prevSingle = await VendorQuote.findOne({
+            vendorEmail: requestDoc.vendorEmail,
+            vendorName: { $ne: null, $ne: '' }
+          }).sort({ createdAt: -1 }).select('vendorName').lean();
+          if (prevSingle) recoveredVendorName = prevSingle.vendorName;
+          else {
+            // Fallback to email prefix
+            recoveredVendorName = requestDoc.vendorEmail.split('@')[0];
+          }
+        }
+      }
+
       const totalAmount = (requestDoc.items || [])
         .filter(it => typeof it.vendorPrice === 'number')
         .reduce((sum, it) => sum + it.vendorPrice * (it.requestedQty || 1), 0);
@@ -314,7 +353,7 @@ router.get('/vendor-quotes/:id', async (req, res) => {
         quoteType: 'multi',
         quote: {
           _id: requestDoc._id,
-          vendorName: requestDoc.vendorName || 'N/A',
+          vendorName: recoveredVendorName || 'N/A',
           vendorEmail: requestDoc.vendorEmail || 'N/A',
           vendorPhone: requestDoc.vendorPhone || null,
           totalAmount,
@@ -330,6 +369,16 @@ router.get('/vendor-quotes/:id', async (req, res) => {
     const singleQuote = await VendorQuote.findById(id).lean();
 
     if (singleQuote) {
+      // Recovery logic for missing vendor names
+      let recoveredVendorName = singleQuote.vendorName;
+      if (!recoveredVendorName && singleQuote.vendorEmail) {
+        const prev = await VendorQuote.findOne({
+          vendorEmail: singleQuote.vendorEmail,
+          vendorName: { $ne: null, $ne: '' }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+        if (prev) recoveredVendorName = prev.vendorName;
+      }
+
       const totalAmount = singleQuote.quotedPrice || 0;
 
       const products = [{
@@ -348,7 +397,7 @@ router.get('/vendor-quotes/:id', async (req, res) => {
         quoteType: 'single',
         quote: {
           _id: singleQuote._id,
-          vendorName: singleQuote.vendorName || 'N/A',
+          vendorName: recoveredVendorName || 'N/A',
           vendorEmail: singleQuote.vendorEmail || 'N/A',
           vendorPhone: singleQuote.vendorPhone || null,
           totalAmount,
@@ -400,7 +449,7 @@ router.get(
   '/admin/vendor-quote-requests',
   requireAdmin,
   query('orderId').optional().trim(),
-  query('status').optional().isIn(['pending', 'submitted']),
+  query('status').optional().isIn(['pending', 'submitted', 'approved', 'accepted', 'rejected']),
   query('page').optional().isInt({ min: 1 }).toInt(),
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
   vendorQuoteController.getAdminMultiItemQuotes
@@ -420,6 +469,9 @@ router.post(
   body('items')
     .isArray({ min: 1 })
     .withMessage('Items array is required'),
+  body('vendorName').optional().trim().isLength({ min: 2, max: 100 }),
+  body('vendorEmail').optional().trim().toLowerCase().isEmail().withMessage('Invalid vendor email'),
+  body('vendorPhone').optional().trim(),
   vendorQuoteController.submitMultiItemQuote
 );
 

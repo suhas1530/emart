@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const VendorQuote = require('../models/VendorQuote');
 const VendorQuoteRequest = require('../models/VendorQuoteRequest');
 const BasketItem = require('../models/BasketItem');
@@ -11,15 +12,15 @@ exports.submitQuote = async (req, res) => {
     console.log('📨 Received quote submission:', JSON.stringify(req.body, null, 2));
     // Temporary debug log for body (requested)
     console.log(req.body);
-    
+
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       console.log('❌ Validation errors:', errors.array());
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: 'Validation failed',
-        errors: errors.array() 
+        errors: errors.array()
       });
     }
 
@@ -141,9 +142,9 @@ exports.getQuotesForItem = async (req, res) => {
     }
 
     // Fetch all active quotes for the item, sorted by price
-    const quotes = await VendorQuote.find({ 
-      itemId, 
-      status: { $ne: 'rejected' } 
+    const quotes = await VendorQuote.find({
+      itemId,
+      status: { $ne: 'rejected' }
     })
       .select('vendorName vendorEmail vendorPhone quotedPrice remarks submittedAt status')
       .sort({ quotedPrice: 1 })
@@ -153,7 +154,7 @@ exports.getQuotesForItem = async (req, res) => {
     const stats = {
       total: quotes.length,
       lowestPrice: quotes.length > 0 ? quotes[0].quotedPrice : null,
-      averagePrice: quotes.length > 0 
+      averagePrice: quotes.length > 0
         ? (quotes.reduce((sum, q) => sum + q.quotedPrice, 0) / quotes.length).toFixed(2)
         : null
     };
@@ -216,11 +217,24 @@ exports.getAdminQuotes = async (req, res) => {
     const pageSize = Math.min(parseInt(limit), 100); // Max 100 items per page
     const skip = (pageNum - 1) * pageSize;
 
-    const quotes = await VendorQuote.find(filters)
+    const quotesRaw = await VendorQuote.find(filters)
       .sort({ submittedAt: -1 })
       .skip(skip)
       .limit(pageSize)
       .lean();
+
+    // Enrich with recovered vendor names
+    const quotes = await Promise.all(quotesRaw.map(async (q) => {
+      let recoveredName = q.vendorName;
+      if (!recoveredName && q.vendorEmail) {
+        const prev = await VendorQuote.findOne({
+          vendorEmail: q.vendorEmail,
+          vendorName: { $ne: null, $ne: '' }
+        }).sort({ submittedAt: -1 }).select('vendorName').lean();
+        if (prev) recoveredName = prev.vendorName;
+      }
+      return { ...q, vendorName: recoveredName };
+    }));
 
     // Get statistics
     const stats = await VendorQuote.aggregate([
@@ -545,7 +559,7 @@ exports.exportQuotesToCSV = async (req, res) => {
     const csvRows = quotes.map(quote => {
       const priceWithGST = (quote.quotedPrice * 1.18).toFixed(2);
       const date = new Date(quote.submittedAt).toLocaleDateString();
-      
+
       return [
         quote.itemId,
         `"${quote.vendorName}"`,
@@ -633,7 +647,7 @@ exports.bulkUpdateStatus = async (req, res) => {
 // @access  Private (Admin)
 exports.createMultiItemQuoteRequest = async (req, res) => {
   try {
-    const { orderId, vendorId, vendorName, vendorEmail, items, tokenExpiryMinutes = 60 } = req.body;
+    const { orderId, vendorId, vendorName, vendorEmail, items, tokenExpiryMinutes = 10080 } = req.body; // default 7 days
 
     if (!orderId || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -695,6 +709,8 @@ exports.createMultiItemQuoteRequest = async (req, res) => {
       tokenExpiresAt: expiresAt
     });
 
+    console.log('✅ VendorQuoteRequest saved to DB:', quoteRequest._id, '| token:', token, '| expires:', expiresAt);
+
     return res.status(201).json({
       success: true,
       message: 'Vendor quote request created',
@@ -728,13 +744,12 @@ exports.getMultiItemQuoteByToken = async (req, res) => {
     }
 
     const isExpired = !requestDoc.tokenExpiresAt || requestDoc.tokenExpiresAt <= new Date();
-    const alreadySubmitted = requestDoc.status === 'submitted';
 
-    if (isExpired || alreadySubmitted) {
+    if (isExpired) {
       return res.status(410).json({
         success: false,
-        message: alreadySubmitted ? 'Quote already submitted' : 'Quote request has expired',
-        status: alreadySubmitted ? 'submitted' : 'expired'
+        message: 'Quote request has expired',
+        status: 'expired'
       });
     }
 
@@ -768,7 +783,7 @@ exports.getMultiItemQuoteByToken = async (req, res) => {
 exports.submitMultiItemQuote = async (req, res) => {
   try {
     const { token } = req.params;
-    const { items } = req.body;
+    const { items, vendorName, vendorEmail, vendorPhone } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -777,19 +792,21 @@ exports.submitMultiItemQuote = async (req, res) => {
       });
     }
 
-    const requestDoc = await VendorQuoteRequest.findOne({ token });
+    // Find the ORIGINAL template quote request by token
+    const templateDoc = await VendorQuoteRequest.findOne({ token });
 
-    if (!requestDoc) {
+    if (!templateDoc) {
       return res.status(404).json({
         success: false,
         message: 'Quote request not found'
       });
     }
 
-    if (!requestDoc.isTokenValid()) {
-      return res.status(410).json({
+    // Check token expiry — but NOT submitted status, multiple vendors can use the same link
+    if (templateDoc.tokenExpiresAt && templateDoc.tokenExpiresAt < new Date()) {
+      return res.status(400).json({
         success: false,
-        message: requestDoc.status === 'submitted' ? 'Quote already submitted' : 'Quote request has expired'
+        message: 'Token expired'
       });
     }
 
@@ -822,29 +839,105 @@ exports.submitMultiItemQuote = async (req, res) => {
       });
     }
 
-    // Update items in the request
-    requestDoc.items = requestDoc.items.map(existing => {
+    // Build the items array with vendor prices merged in
+    const submittedItems = templateDoc.items.map(existing => {
       const key = `${existing.productId}::${existing.variantId || ''}`;
       const submitted = priceMap.get(key);
-      if (!submitted) {
-        return existing;
-      }
       return {
-        ...existing.toObject(),
-        vendorPrice: submitted.price,
-        vendorRemark: submitted.remark
+        productId: existing.productId,
+        variantId: existing.variantId || null,
+        productName: existing.productName || null,
+        variantName: existing.variantName || null,
+        image: existing.image || null,
+        requestedQty: existing.requestedQty,
+        vendorPrice: submitted ? submitted.price : null,
+        vendorRemark: submitted ? submitted.remark : null
       };
     });
 
-    requestDoc.status = 'submitted';
-    requestDoc.submittedAt = new Date();
+    // Resolve vendor identity
+    let resolvedVendorName = (vendorName && vendorName.trim())
+      ? vendorName.trim().substring(0, 100)
+      : (templateDoc.vendorName || null);
 
-    await requestDoc.save();
+    const resolvedVendorEmail = (vendorEmail && vendorEmail.trim())
+      ? vendorEmail.toLowerCase().trim()
+      : (templateDoc.vendorEmail || null);
+
+    // CRITICAL: Ensure we have an email. 
+    // If both body and template are missing it, we cannot save the submission.
+    if (!resolvedVendorEmail) {
+      console.warn('⚠️ Rejected submission: Missing vendor email', { token, vendorName });
+      return res.status(400).json({
+        success: false,
+        message: 'Vendor email is required for submission. Please provide your email in the form.'
+      });
+    }
+
+    // CRITICAL: If still no name but we have an email, try to recover it from ALL history 
+    // or use email prefix. This prevents "Unknown Vendor" for submitted quotes.
+    if (!resolvedVendorName && resolvedVendorEmail) {
+      console.log(`🔍 Attempting to recover name for email: ${resolvedVendorEmail}`);
+
+      // Try VendorQuoteRequest (multi) history
+      const matchMulti = await mongoose.model('VendorQuoteRequest').findOne({
+        vendorEmail: resolvedVendorEmail,
+        vendorName: { $nin: [null, '', /Unknown/i, /Awaiting/i] }
+      }).sort({ createdAt: -1 }).select('vendorName').lean();
+
+      if (matchMulti) {
+        resolvedVendorName = matchMulti.vendorName;
+        console.log(`✅ Recovered name from VendorQuoteRequest: ${resolvedVendorName}`);
+      } else {
+        // Try VendorQuote (single) history
+        const matchSingle = await mongoose.model('VendorQuote').findOne({
+          vendorEmail: resolvedVendorEmail,
+          vendorName: { $nin: [null, '', /Unknown/i, /Awaiting/i] }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+
+        if (matchSingle) {
+          resolvedVendorName = matchSingle.vendorName;
+          console.log(`✅ Recovered name from VendorQuote: ${resolvedVendorName}`);
+        } else {
+          // Fallback to email prefix (e.g. "suhashj543" from "suhashj543@gmail.com")
+          resolvedVendorName = resolvedVendorEmail.split('@')[0];
+          console.log(`ℹ️ No history found. Using email prefix as fallback: ${resolvedVendorName}`);
+        }
+      }
+    }
+
+    const resolvedVendorPhone = (vendorPhone && vendorPhone.trim())
+      ? vendorPhone.trim()
+      : (templateDoc.vendorPhone || null);
+
+    // ✅ Create a NEW document for this vendor's submission
+    const { randomUUID } = require('crypto');
+    const newToken = randomUUID();
+
+    const submittedDoc = await VendorQuoteRequest.create({
+      orderId: templateDoc.orderId,
+      vendorId: templateDoc.vendorId || null,
+      vendorName: resolvedVendorName || 'Unknown Vendor', // Final fallback
+      vendorEmail: resolvedVendorEmail,
+      vendorPhone: resolvedVendorPhone,
+      items: submittedItems,
+      status: 'submitted',
+      token: newToken,
+      tokenExpiresAt: templateDoc.tokenExpiresAt,
+      submittedAt: new Date()
+    });
+
+    console.log('✅ Vendor quote submission created:', {
+      id: submittedDoc._id,
+      name: submittedDoc.vendorName,
+      email: submittedDoc.vendorEmail,
+      items: submittedDoc.items.length
+    });
 
     return res.status(200).json({
       success: true,
       message: 'Quote submitted successfully',
-      request: requestDoc
+      request: submittedDoc
     });
   } catch (error) {
     console.error('❌ Error submitting multi-item quote:', error);
@@ -861,12 +954,16 @@ exports.submitMultiItemQuote = async (req, res) => {
 // @access  Private (Admin)
 exports.getAdminMultiItemQuotes = async (req, res) => {
   try {
-    const { orderId, status, page = 1, limit = 20 } = req.query;
+    const { orderId, status, page = 1, limit = 20, includeTemplates } = req.query;
 
     const query = {};
     if (orderId) query.orderId = orderId;
-    if (status && ['pending', 'submitted'].includes(status)) {
+    if (status && ['pending', 'submitted', 'approved', 'accepted', 'rejected'].includes(status)) {
       query.status = status;
+    } else if (!includeTemplates) {
+      // By default, exclude 'pending' template documents (they have no vendor info).
+      // Only show documents that have been submitted by a vendor.
+      query.status = { $ne: 'pending' };
     }
 
     const pageNum = parseInt(page, 10) || 1;
@@ -882,13 +979,51 @@ exports.getAdminMultiItemQuotes = async (req, res) => {
       VendorQuoteRequest.countDocuments(query)
     ]);
 
-    // Compute totals for each request
-    const enriched = requests.map(r => {
+    // Compute totals and attempt to RECOVER missing vendor names from email history
+    const enriched = await Promise.all(requests.map(async (r) => {
+      let recoveredName = r.vendorName;
+
+      // If name is missing but email exists, try to find the name from previous quotes
+      if (!recoveredName && r.vendorEmail) {
+        // Try VendorQuoteRequest first
+        const previousRequest = await mongoose.model('VendorQuoteRequest')
+          .findOne({ vendorEmail: r.vendorEmail, vendorName: { $nin: [null, ''] } })
+          .sort({ createdAt: -1 })
+          .select('vendorName')
+          .lean();
+
+        if (previousRequest) {
+          recoveredName = previousRequest.vendorName;
+        } else {
+          // Try VendorQuote (single item)
+          const previousQuote = await mongoose.model('VendorQuote')
+            .findOne({ vendorEmail: r.vendorEmail, vendorName: { $nin: [null, ''] } })
+            .sort({ createdAt: -1 })
+            .select('vendorName')
+            .lean();
+          if (previousQuote) recoveredName = previousQuote.vendorName;
+        }
+
+        // Last-resort fallback: use email username as display name
+        if (!recoveredName && r.vendorEmail) {
+          recoveredName = r.vendorEmail.split('@')[0];
+        }
+
+        if (recoveredName && recoveredName !== r.vendorName) {
+          console.log(`🔄 Recovered vendor name for ${r._id}: "${recoveredName}" (email: ${r.vendorEmail})`);
+        }
+      }
+
       const totalAmount = (r.items || [])
         .filter(it => typeof it.vendorPrice === 'number')
         .reduce((sum, it) => sum + it.vendorPrice * (it.requestedQty || 1), 0);
-      return { ...r, totalAmount };
-    });
+
+      return {
+        ...r,
+        vendorName: recoveredName,
+        totalAmount
+      };
+    }));
 
     return res.status(200).json({
       success: true,
@@ -905,6 +1040,50 @@ exports.getAdminMultiItemQuotes = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Error fetching multi-item quotes',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update vendor information on a quote (Admin only)
+// @route   PATCH /api/vendor-quote-requests/:id
+// @access  Private (Admin)
+exports.updateVendorQuoteRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { vendorName, vendorEmail, vendorPhone } = req.body;
+
+    // Try multi-item request first
+    let doc = await VendorQuoteRequest.findById(id);
+
+    // If not found, try single-item quote
+    if (!doc) {
+      doc = await VendorQuote.findById(id);
+    }
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quote document not found'
+      });
+    }
+
+    if (vendorName !== undefined) doc.vendorName = vendorName ? vendorName.trim() : null;
+    if (vendorEmail !== undefined) doc.vendorEmail = vendorEmail ? vendorEmail.trim().toLowerCase() : null;
+    if (vendorPhone !== undefined) doc.vendorPhone = vendorPhone ? vendorPhone.trim() : null;
+
+    await doc.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Vendor information updated successfully',
+      data: doc
+    });
+  } catch (error) {
+    console.error('Error updating vendor info:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating vendor information',
       error: error.message
     });
   }
