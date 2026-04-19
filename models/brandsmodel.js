@@ -53,16 +53,17 @@ const variantSchema = new mongoose.Schema({
   listPrice: { type: Number, required: true },
   discount: { type: Number, default: 0 },
   profit: { type: Number, default: 0 },
-  tax: { type: Number, default: 5 },
+  gst: { type: Number, default: 18 },   // GST percentage (e.g. 18 means 18%)
+  tax: { type: Number, default: 18 },   // Kept for backward-compatibility with old records
   finalPrice: { type: Number, required: true }
 });
 
 // Product Schema
 const productSchema = new mongoose.Schema({
-  access: { 
-    type: String, 
-    enum: ["Member", "User", "Both"], 
-    default: "Both" 
+  access: {
+    type: String,
+    enum: ["Member", "User", "Both"],
+    default: "Both"
   },
   brandId: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand' },
   brandName: String,
@@ -84,6 +85,11 @@ const brandSchema = new mongoose.Schema(
   {
     brandName: { type: String, required: true },
     brandImage: String,
+    status: {
+      type: String,
+      enum: ["publish", "hold"],
+      default: "publish"
+    },
     categories: [categorySchema],
     products: [productSchema] // Products stored under brand
   },

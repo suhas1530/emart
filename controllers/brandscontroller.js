@@ -9,10 +9,10 @@
 //   try {
 //     const webpFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
 //     const outputPath = path.join('uploads', webpFilename);
-    
+
 //     // Ensure uploads directory exists
 //     await fs.mkdir('uploads', { recursive: true });
-    
+
 //     // Process image: resize, compress, and convert to WebP
 //     await sharp(filePath)
 //       .resize(800, 800, {
@@ -24,10 +24,10 @@
 //         effort: 6    // Compression effort (0-6, higher = smaller file)
 //       })
 //       .toFile(outputPath);
-    
+
 //     // Delete original uploaded file
 //     await fs.unlink(filePath);
-    
+
 //     return outputPath;
 //   } catch (error) {
 //     console.error('Error processing image:', error);
@@ -52,16 +52,16 @@
 // exports.addBrand = async (req, res) => {
 //   try {
 //     let brandImage = "";
-    
+
 //     if (req.file) {
 //       brandImage = await processImage(req.file.path);
 //     }
-    
+
 //     const brand = await Brand.create({
 //       brandName: req.body.brandName,
 //       brandImage: brandImage,
 //     });
-    
+
 //     res.json(brand);
 //   } catch (error) {
 //     console.error('Error adding brand:', error);
@@ -73,22 +73,22 @@
 // exports.addCategory = async (req, res) => {
 //   try {
 //     let categoryImage = "";
-    
+
 //     if (req.file) {
 //       categoryImage = await processImage(req.file.path);
 //     }
-    
+
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     brand.categories.push({
 //       categoryName: req.body.categoryName,
 //       categoryImage: categoryImage,
 //     });
-    
+
 //     await brand.save();
 //     res.json(brand);
 //   } catch (error) {
@@ -101,19 +101,19 @@
 // exports.addSubCategory = async (req, res) => {
 //   try {
 //     let subCategoryImage = "";
-    
+
 //     if (req.file) {
 //       subCategoryImage = await processImage(req.file.path);
 //     }
-    
+
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const category = brand.categories.id(req.params.categoryId);
-    
+
 //     if (!category) {
 //       return res.status(404).json({ error: 'Category not found' });
 //     }
@@ -137,31 +137,31 @@
 // exports.updateBrand = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const updateData = {
 //       brandName: req.body.brandName
 //     };
-    
+
 //     if (req.file) {
 //       // Delete old image if exists
 //       if (brand.brandImage) {
 //         await deleteImage(brand.brandImage);
 //       }
-      
+
 //       // Process and save new image
 //       updateData.brandImage = await processImage(req.file.path);
 //     }
-    
+
 //     const updatedBrand = await Brand.findByIdAndUpdate(
 //       req.params.brandId,
 //       updateData,
 //       { new: true }
 //     );
-    
+
 //     res.json(updatedBrand);
 //   } catch (error) {
 //     console.error('Error updating brand:', error);
@@ -173,31 +173,31 @@
 // exports.updateCategory = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const category = brand.categories.id(req.params.categoryId);
-    
+
 //     if (!category) {
 //       return res.status(404).json({ error: 'Category not found' });
 //     }
-    
+
 //     if (req.body.categoryName) {
 //       category.categoryName = req.body.categoryName;
 //     }
-    
+
 //     if (req.file) {
 //       // Delete old image if exists
 //       if (category.categoryImage) {
 //         await deleteImage(category.categoryImage);
 //       }
-      
+
 //       // Process and save new image
 //       category.categoryImage = await processImage(req.file.path);
 //     }
-    
+
 //     await brand.save();
 //     res.json(brand);
 //   } catch (error) {
@@ -210,37 +210,37 @@
 // exports.updateSubCategory = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const category = brand.categories.id(req.params.categoryId);
-    
+
 //     if (!category) {
 //       return res.status(404).json({ error: 'Category not found' });
 //     }
-    
+
 //     const subCategory = category.subCategories.id(req.params.subCategoryId);
-    
+
 //     if (!subCategory) {
 //       return res.status(404).json({ error: 'Sub-category not found' });
 //     }
-    
+
 //     if (req.body.subCategoryName) {
 //       subCategory.subCategoryName = req.body.subCategoryName;
 //     }
-    
+
 //     if (req.file) {
 //       // Delete old image if exists
 //       if (subCategory.subCategoryImage) {
 //         await deleteImage(subCategory.subCategoryImage);
 //       }
-      
+
 //       // Process and save new image
 //       subCategory.subCategoryImage = await processImage(req.file.path);
 //     }
-    
+
 //     await brand.save();
 //     res.json(brand);
 //   } catch (error) {
@@ -255,29 +255,29 @@
 // exports.deleteBrand = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     // Delete brand image
 //     if (brand.brandImage) {
 //       await deleteImage(brand.brandImage);
 //     }
-    
+
 //     // Delete all category and subcategory images
 //     for (const category of brand.categories) {
 //       if (category.categoryImage) {
 //         await deleteImage(category.categoryImage);
 //       }
-      
+
 //       for (const subCategory of category.subCategories) {
 //         if (subCategory.subCategoryImage) {
 //           await deleteImage(subCategory.subCategoryImage);
 //         }
 //       }
 //     }
-    
+
 //     await Brand.findByIdAndDelete(req.params.brandId);
 //     res.json({ message: "Brand deleted successfully" });
 //   } catch (error) {
@@ -290,33 +290,33 @@
 // exports.deleteCategory = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const category = brand.categories.id(req.params.categoryId);
-    
+
 //     if (!category) {
 //       return res.status(404).json({ error: 'Category not found' });
 //     }
-    
+
 //     // Delete category image
 //     if (category.categoryImage) {
 //       await deleteImage(category.categoryImage);
 //     }
-    
+
 //     // Delete all subcategory images
 //     for (const subCategory of category.subCategories) {
 //       if (subCategory.subCategoryImage) {
 //         await deleteImage(subCategory.subCategoryImage);
 //       }
 //     }
-    
+
 //     brand.categories = brand.categories.filter(
 //       c => c._id.toString() !== req.params.categoryId
 //     );
-    
+
 //     await brand.save();
 //     res.json({ message: "Category deleted successfully" });
 //   } catch (error) {
@@ -329,28 +329,28 @@
 // exports.deleteSubCategory = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     const category = brand.categories.id(req.params.categoryId);
-    
+
 //     if (!category) {
 //       return res.status(404).json({ error: 'Category not found' });
 //     }
-    
+
 //     const subCategory = category.subCategories.id(req.params.subCategoryId);
-    
+
 //     // Delete subcategory image
 //     if (subCategory && subCategory.subCategoryImage) {
 //       await deleteImage(subCategory.subCategoryImage);
 //     }
-    
+
 //     category.subCategories = category.subCategories.filter(
 //       s => s._id.toString() !== req.params.subCategoryId
 //     );
-    
+
 //     await brand.save();
 //     res.json({ message: "Sub Category deleted successfully" });
 //   } catch (error) {
@@ -376,11 +376,11 @@
 // exports.getBrand = async (req, res) => {
 //   try {
 //     const brand = await Brand.findById(req.params.brandId);
-    
+
 //     if (!brand) {
 //       return res.status(404).json({ error: 'Brand not found' });
 //     }
-    
+
 //     res.json(brand);
 //   } catch (error) {
 //     console.error('Error fetching brand:', error);
@@ -399,10 +399,10 @@ async function processImage(filePath) {
   try {
     const webpFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
     const outputPath = path.join('uploads', webpFilename);
-    
+
     // Ensure uploads directory exists
     await fs.mkdir('uploads', { recursive: true });
-    
+
     // Process image: resize, compress, and convert to WebP
     await sharp(filePath)
       .resize(800, 800, {
@@ -414,10 +414,10 @@ async function processImage(filePath) {
         effort: 6
       })
       .toFile(outputPath);
-    
+
     // Delete original uploaded file
     await fs.unlink(filePath);
-    
+
     return outputPath;
   } catch (error) {
     console.error('Error processing image:', error);
@@ -442,16 +442,16 @@ async function deleteImage(imagePath) {
 exports.addBrand = async (req, res) => {
   try {
     let brandImage = "";
-    
+
     if (req.file) {
       brandImage = await processImage(req.file.path);
     }
-    
+
     const brand = await Brand.create({
       brandName: req.body.brandName,
       brandImage: brandImage,
     });
-    
+
     res.json(brand);
   } catch (error) {
     console.error('Error adding brand:', error);
@@ -463,28 +463,28 @@ exports.addBrand = async (req, res) => {
 exports.updateBrand = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const updateData = {
       brandName: req.body.brandName
     };
-    
+
     if (req.file) {
       if (brand.brandImage) {
         await deleteImage(brand.brandImage);
       }
       updateData.brandImage = await processImage(req.file.path);
     }
-    
+
     const updatedBrand = await Brand.findByIdAndUpdate(
       req.params.brandId,
       updateData,
       { new: true }
     );
-    
+
     res.json(updatedBrand);
   } catch (error) {
     console.error('Error updating brand:', error);
@@ -496,27 +496,27 @@ exports.updateBrand = async (req, res) => {
 exports.deleteBrand = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     if (brand.brandImage) {
       await deleteImage(brand.brandImage);
     }
-    
+
     for (const category of brand.categories) {
       if (category.categoryImage) {
         await deleteImage(category.categoryImage);
       }
-      
+
       for (const subCategory of category.subCategories) {
         if (subCategory.subCategoryImage) {
           await deleteImage(subCategory.subCategoryImage);
         }
       }
     }
-    
+
     // Delete all product images
     for (const product of brand.products) {
       if (product.images && product.images.length > 0) {
@@ -528,7 +528,7 @@ exports.deleteBrand = async (req, res) => {
         await deleteImage(product.catalog);
       }
     }
-    
+
     await Brand.findByIdAndDelete(req.params.brandId);
     res.json({ message: "Brand deleted successfully" });
   } catch (error) {
@@ -552,11 +552,11 @@ exports.getBrands = async (req, res) => {
 exports.getBrand = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     res.json(brand);
   } catch (error) {
     console.error('Error fetching brand:', error);
@@ -570,22 +570,22 @@ exports.getBrand = async (req, res) => {
 exports.addCategory = async (req, res) => {
   try {
     let categoryImage = "";
-    
+
     if (req.file) {
       categoryImage = await processImage(req.file.path);
     }
-    
+
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     brand.categories.push({
       categoryName: req.body.categoryName,
       categoryImage: categoryImage,
     });
-    
+
     await brand.save();
     res.json(brand);
   } catch (error) {
@@ -598,28 +598,28 @@ exports.addCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.params.categoryId);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
-    
+
     if (req.body.categoryName) {
       category.categoryName = req.body.categoryName;
     }
-    
+
     if (req.file) {
       if (category.categoryImage) {
         await deleteImage(category.categoryImage);
       }
       category.categoryImage = await processImage(req.file.path);
     }
-    
+
     await brand.save();
     res.json(brand);
   } catch (error) {
@@ -632,31 +632,31 @@ exports.updateCategory = async (req, res) => {
 exports.deleteCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.params.categoryId);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
-    
+
     if (category.categoryImage) {
       await deleteImage(category.categoryImage);
     }
-    
+
     for (const subCategory of category.subCategories) {
       if (subCategory.subCategoryImage) {
         await deleteImage(subCategory.subCategoryImage);
       }
     }
-    
+
     brand.categories = brand.categories.filter(
       c => c._id.toString() !== req.params.categoryId
     );
-    
+
     await brand.save();
     res.json({ message: "Category deleted successfully" });
   } catch (error) {
@@ -671,19 +671,19 @@ exports.deleteCategory = async (req, res) => {
 exports.addSubCategory = async (req, res) => {
   try {
     let subCategoryImage = "";
-    
+
     if (req.file) {
       subCategoryImage = await processImage(req.file.path);
     }
-    
+
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.params.categoryId);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -705,34 +705,34 @@ exports.addSubCategory = async (req, res) => {
 exports.updateSubCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.params.categoryId);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
-    
+
     const subCategory = category.subCategories.id(req.params.subCategoryId);
-    
+
     if (!subCategory) {
       return res.status(404).json({ error: 'Sub-category not found' });
     }
-    
+
     if (req.body.subCategoryName) {
       subCategory.subCategoryName = req.body.subCategoryName;
     }
-    
+
     if (req.file) {
       if (subCategory.subCategoryImage) {
         await deleteImage(subCategory.subCategoryImage);
       }
       subCategory.subCategoryImage = await processImage(req.file.path);
     }
-    
+
     await brand.save();
     res.json(brand);
   } catch (error) {
@@ -745,27 +745,27 @@ exports.updateSubCategory = async (req, res) => {
 exports.deleteSubCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.params.categoryId);
-    
+
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
-    
+
     const subCategory = category.subCategories.id(req.params.subCategoryId);
-    
+
     if (subCategory && subCategory.subCategoryImage) {
       await deleteImage(subCategory.subCategoryImage);
     }
-    
+
     category.subCategories = category.subCategories.filter(
       s => s._id.toString() !== req.params.subCategoryId
     );
-    
+
     await brand.save();
     res.json({ message: "Sub Category deleted successfully" });
   } catch (error) {
@@ -780,21 +780,21 @@ exports.deleteSubCategory = async (req, res) => {
 exports.addProduct = async (req, res) => {
   try {
     const brand = await Brand.findById(req.body.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const category = brand.categories.id(req.body.categoryId);
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
-    
+
     const subCategory = category.subCategories.id(req.body.subCategoryId);
     if (!subCategory) {
       return res.status(404).json({ error: 'Sub-category not found' });
     }
-    
+
     // Process product images (convert to WebP)
     const processedImages = [];
     if (req.files && req.files.images) {
@@ -803,20 +803,20 @@ exports.addProduct = async (req, res) => {
         processedImages.push(processedPath);
       }
     }
-    
+
     // Process catalog file if present
     let catalogPath = null;
     if (req.files && req.files.catalog && req.files.catalog[0]) {
       // For catalog, just move it without processing (PDF/DOC)
       const catalogFile = req.files.catalog[0];
       const catalogFilename = `${Date.now()}-${catalogFile.originalname}`;
-      catalogPath = path.join('uploads', catalogFilename);
-      await fs.rename(catalogFile.path, catalogPath);
+      catalogPath = `uploads/${catalogFilename}`;  // Use forward slashes for URL compatibility
+      await fs.rename(catalogFile.path, path.join('uploads', catalogFilename));
     }
-    
+
     // Parse variants from JSON string
     const variants = JSON.parse(req.body.variants);
-    
+
     // Create product object
     const productData = {
       access: req.body.access,
@@ -835,14 +835,14 @@ exports.addProduct = async (req, res) => {
       hsnCode: req.body.hsnCode,
       variants: variants
     };
-    
+
     // Add product to brand's products array
     brand.products.push(productData);
     await brand.save();
-    
-    res.json({ 
-      message: 'Product added successfully', 
-      product: brand.products[brand.products.length - 1] 
+
+    res.json({
+      message: 'Product added successfully',
+      product: brand.products[brand.products.length - 1]
     });
   } catch (error) {
     console.error('Error adding product:', error);
@@ -854,7 +854,7 @@ exports.addProduct = async (req, res) => {
 exports.getAllProducts = async (req, res) => {
   try {
     const brands = await Brand.find();
-    
+
     // Flatten all products from all brands
     const allProducts = [];
     brands.forEach(brand => {
@@ -866,7 +866,7 @@ exports.getAllProducts = async (req, res) => {
         });
       });
     });
-    
+
     res.json(allProducts);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -878,11 +878,12 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductsByBrand = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
+    // Return all products for admin
     res.json(brand.products);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -894,15 +895,15 @@ exports.getProductsByBrand = async (req, res) => {
 exports.getProductsByCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const categoryProducts = brand.products.filter(
       product => product.categoryId.toString() === req.params.categoryId
     );
-    
+
     res.json(categoryProducts);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -914,15 +915,15 @@ exports.getProductsByCategory = async (req, res) => {
 exports.getProductsBySubCategory = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const subCategoryProducts = brand.products.filter(
       product => product.subCategoryId.toString() === req.params.subCategoryId
     );
-    
+
     res.json(subCategoryProducts);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -934,17 +935,17 @@ exports.getProductsBySubCategory = async (req, res) => {
 exports.getProduct = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const product = brand.products.id(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    
+
     res.json(product);
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -956,17 +957,17 @@ exports.getProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const product = brand.products.id(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    
+
     // Update basic fields
     if (req.body.access) product.access = req.body.access;
     if (req.body.productName) product.productName = req.body.productName;
@@ -974,12 +975,12 @@ exports.updateProduct = async (req, res) => {
     if (req.body.videoLink) product.videoLink = req.body.videoLink;
     if (req.body.enquiry !== undefined) product.enquiry = req.body.enquiry === 'true';
     if (req.body.hsnCode) product.hsnCode = req.body.hsnCode;
-    
+
     // Update variants if provided
     if (req.body.variants) {
       product.variants = JSON.parse(req.body.variants);
     }
-    
+
     // Process new images if uploaded
     if (req.files && req.files.images) {
       const newImages = [];
@@ -987,30 +988,30 @@ exports.updateProduct = async (req, res) => {
         const processedPath = await processImage(file.path);
         newImages.push(processedPath);
       }
-      
+
       // Delete old images
       if (product.images && product.images.length > 0) {
         for (const oldImage of product.images) {
           await deleteImage(oldImage);
         }
       }
-      
+
       product.images = newImages;
     }
-    
+
     // Update catalog if uploaded
     if (req.files && req.files.catalog && req.files.catalog[0]) {
       if (product.catalog) {
         await deleteImage(product.catalog);
       }
-      
+
       const catalogFile = req.files.catalog[0];
       const catalogFilename = `${Date.now()}-${catalogFile.originalname}`;
-      const catalogPath = path.join('uploads', catalogFilename);
-      await fs.rename(catalogFile.path, catalogPath);
+      const catalogPath = `uploads/${catalogFilename}`;  // Use forward slashes for URL compatibility
+      await fs.rename(catalogFile.path, path.join('uploads', catalogFilename));
       product.catalog = catalogPath;
     }
-    
+
     await brand.save();
     res.json({ message: 'Product updated successfully', product });
   } catch (error) {
@@ -1023,38 +1024,137 @@ exports.updateProduct = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
   try {
     const brand = await Brand.findById(req.params.brandId);
-    
+
     if (!brand) {
       return res.status(404).json({ error: 'Brand not found' });
     }
-    
+
     const product = brand.products.id(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    
+
     // Delete product images
     if (product.images && product.images.length > 0) {
       for (const image of product.images) {
         await deleteImage(image);
       }
     }
-    
+
     // Delete catalog
     if (product.catalog) {
       await deleteImage(product.catalog);
     }
-    
+
     // Remove product from array
     brand.products = brand.products.filter(
       p => p._id.toString() !== req.params.productId
     );
-    
+
     await brand.save();
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ==================== BRAND STATUS FUNCTIONS ====================
+
+// UPDATE BRAND STATUS (Publish / Hold)
+exports.updateBrandStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    if (!['publish', 'hold'].includes(status)) {
+      return res.status(400).json({
+        error: 'Invalid status. Must be publish or hold'
+      });
+    }
+
+    const brand = await Brand.findById(req.params.brandId);
+
+    if (!brand) {
+      return res.status(404).json({ error: 'Brand not found' });
+    }
+
+    brand.status = status;
+    await brand.save();
+
+    console.log(`✅ Brand "${brand.brandName}" status changed to ${status}`);
+
+    res.json({
+      message: `Brand ${status === 'publish' ? 'published' : 'put on hold'} successfully`,
+      brand
+    });
+  } catch (error) {
+    console.error('Error updating brand status:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET ALL PUBLISHED BRANDS WITH PRODUCTS (for user-facing APIs only)
+exports.getPublishedProducts = async (req, res) => {
+  try {
+    // Only get brands with status "publish"
+    const brands = await Brand.find({ status: 'publish' });
+
+    // Flatten all products from published brands
+    const publishedProducts = [];
+    brands.forEach(brand => {
+      brand.products.forEach(product => {
+        publishedProducts.push({
+          ...product.toObject(),
+          _id: product._id,
+          brandId: brand._id
+        });
+      });
+    });
+
+    res.json(publishedProducts);
+  } catch (error) {
+    console.error('Error fetching published products:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// SEARCH PRODUCTS FROM PUBLISHED BRANDS (user-facing)
+exports.searchProducts = async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || String(q).trim().length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+
+    const searchTerm = String(q).trim().toLowerCase();
+    // Only search in published brands
+    const brands = await Brand.find({ status: 'publish' });
+
+    const results = [];
+    brands.forEach(brand => {
+      brand.products.forEach(product => {
+        const matches =
+          product.productName.toLowerCase().includes(searchTerm) ||
+          product.categoryName?.toLowerCase().includes(searchTerm) ||
+          product.subCategoryName?.toLowerCase().includes(searchTerm) ||
+          product.description?.toLowerCase().includes(searchTerm) ||
+          brand.brandName.toLowerCase().includes(searchTerm);
+
+        if (matches) {
+          results.push({
+            ...product.toObject(),
+            _id: product._id,
+            brandId: brand._id
+          });
+        }
+      });
+    });
+
+    res.json(results);
+  } catch (error) {
+    console.error('Error searching products:', error);
     res.status(500).json({ error: error.message });
   }
 };

@@ -1,8 +1,11 @@
-// routes/vendorroutes.js - Vendor Quote Routes
+// routes/vendorroutes.js - Vendor Quote Routes with all endpoints
 const express = require('express');
 const router = express.Router();
 const { body, query, param, validationResult } = require('express-validator');
 const vendorQuoteController = require('../controllers/vendorQuoteController');
+const axios = require('axios');
+const VendorQuoteRequest = require('../models/VendorQuoteRequest');
+const VendorQuote = require('../models/VendorQuote');
 
 // VALIDATION MIDDLEWARE
 const validateQuoteSubmission = [
@@ -30,10 +33,7 @@ const validateQuoteSubmission = [
   body('remarks')
     .optional()
     .trim()
-    .isLength({ max: 500 }).withMessage('Remarks cannot exceed 500 characters'),
-  body('termsAccepted')
-    .optional()
-    .isBoolean().withMessage('Terms acceptance must be boolean')
+    .isLength({ max: 500 }).withMessage('Remarks cannot exceed 500 characters')
 ];
 
 const validateStatusUpdate = [
@@ -52,45 +52,68 @@ const validateStatusUpdate = [
     .isLength({ max: 500 }).withMessage('Rejection reason cannot exceed 500 characters')
 ];
 
+// Error handling middleware for validation errors
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+};
+
+// Admin authentication middleware placeholder
+const requireAdmin = (req, res, next) => {
+  // TODO: Implement JWT verification
+  // For now, we'll assume requests from admin routes are authenticated
+  next();
+};
+
 // ==================== PUBLIC ROUTES ====================
+// These are mounted at /api, so full URLs will be:
+//   POST /api/vendor/submit-quote
+//   GET  /api/vendor/quotes/:itemId
+//   GET  /api/vendor/product/:itemId
 
-// @route   POST /api/vendor/submit-quote
-// @desc    Submit a new vendor quote
-// @access  Public
-router.post('/submit-quote', validateQuoteSubmission, vendorQuoteController.submitQuote);
+// POST /api/vendor/submit-quote - Submit a new vendor quote
+router.post(
+  '/vendor/submit-quote',
+  validateQuoteSubmission,
+  handleValidationErrors,
+  vendorQuoteController.submitQuote
+);
 
-// @route   GET /api/vendor/quotes/:itemId
-// @desc    Get all quotes for a specific item
-// @access  Public (Vendor Portal)
-router.get('/quotes/:itemId', 
+// GET /api/vendor/quotes/:itemId - Get all quotes for a specific item
+router.get(
+  '/vendor/quotes/:itemId',
   param('itemId').trim().notEmpty().withMessage('Item ID is required'),
   vendorQuoteController.getQuotesForItem
 );
 
-// @route   GET /api/vendor/product/:itemId
-// @desc    Get product info for vendor portal
-// @access  Public
-router.get('/product/:itemId', async (req, res) => {
+// GET /api/vendor/product/:itemId - Get product info for vendor portal
+router.get('/vendor/product/:itemId', async (req, res) => {
   try {
     const { itemId } = req.params;
-    
+
     if (!itemId) {
       return res.status(400).json({
         success: false,
         message: 'Item ID is required'
       });
     }
-    
+
     // Try to fetch from internal API
-    const axios = require('axios');
     try {
       const response = await axios.get(
         `${process.env.INTERNAL_API_URL || 'http://localhost:5000'}/api/admin/basket-items`
       );
-      
+
       if (response.data.success && response.data.items) {
         const product = response.data.items.find(item => item._id === itemId);
-        
+
         if (product) {
           return res.json({
             success: true,
@@ -110,13 +133,13 @@ router.get('/product/:itemId', async (req, res) => {
     } catch (axiosError) {
       console.error('Axios error:', axiosError.message);
     }
-    
+
     // If not found, return error
     return res.status(404).json({
       success: false,
       message: 'Product not found'
     });
-    
+
   } catch (error) {
     console.error('Error fetching product:', error);
     return res.status(500).json({
@@ -127,131 +150,454 @@ router.get('/product/:itemId', async (req, res) => {
   }
 });
 
-// Webhook to sync quotes to external system (if needed)
-router.post('/webhook/sync-to-external', async (req, res) => {
-  try {
-    const { itemId, quoteId } = req.body;
-    
-    const quote = await VendorQuote.findById(quoteId);
-    if (!quote) {
-      return res.status(404).json({ success: false, message: 'Quote not found' });
-    }
-    
-    // Push quote to external API if it supports vendorQuotes field
-    await axios.patch(
-      `https://other-userpanel.basavamart.com/api/basket-items/${itemId}/add-vendor-quote`,
-      {
-        vendorQuote: {
-          vendorName: quote.vendorName,
-          vendorEmail: quote.vendorEmail,
-          vendorPhone: quote.vendorPhone,
-          quotedPrice: quote.quotedPrice,
-          remarks: quote.remarks,
-          submittedAt: quote.submittedAt
-        }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.EXTERNAL_API_TOKEN}`
-        }
-      }
-    );
-    
-    res.json({ success: true, message: 'Synced to external system' });
-  } catch (error) {
-    console.error('Sync error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// ==================== PUBLIC / SHARED ROUTES ====================
+// Full URLs:
+//   GET   /api/vendor-quotes
+//   PATCH /api/vendor-quote-requests/:requestId/status
+//   PATCH /api/vendor-quote-requests/:id
+//   GET   /api/vendor-quotes/:id
 
-// Admin: Get all quotes across all products
-router.get('/admin/all-quotes', async (req, res) => {
+// GET /api/vendor-quotes - Get all VendorQuoteRequest documents grouped by order
+router.get('/vendor-quotes', async (req, res) => {
   try {
-    const { page = 1, limit = 50, status, sortBy = 'submittedAt' } = req.query;
-    
-    const query = {};
-    if (status) query.status = status;
-    
-    const quotes = await VendorQuote.find(query)
-      .sort({ [sortBy]: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
+    // Fetch all SUBMITTED VendorQuoteRequest documents (exclude pending templates)
+    const requests = await VendorQuoteRequest.find({ status: { $ne: 'pending' } })
+      .sort({ createdAt: -1 })
       .lean();
-    
-    const total = await VendorQuote.countDocuments(query);
-    
-    res.json({
-      success: true,
-      quotes,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+
+    // Build a map: orderId → { orderId, products: { productId → productEntry }, createdAt }
+    const orderMap = new Map();
+
+    for (const req of requests) {
+      const orderId = req.orderId || 'UNKNOWN';
+
+      if (!orderMap.has(orderId)) {
+        orderMap.set(orderId, {
+          _id: req._id,
+          orderId,
+          products: new Map(),
+          createdAt: req.createdAt
+        });
       }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// Admin: Update quote status
-router.put('/admin/quote/:quoteId', async (req, res) => {
-  try {
-    const { status, adminNote } = req.body;
-    
-    const quote = await VendorQuote.findByIdAndUpdate(
-      req.params.quoteId,
-      { status, adminNote, reviewedAt: new Date() },
-      { new: true }
-    );
-    
-    if (!quote) {
-      return res.status(404).json({ success: false, message: 'Quote not found' });
+      const orderEntry = orderMap.get(orderId);
+
+      // Use the most-recent createdAt for the order group
+      if (new Date(req.createdAt) > new Date(orderEntry.createdAt)) {
+        orderEntry.createdAt = req.createdAt;
+        orderEntry._id = req._id;
+      }
+
+      // Recover vendor name if missing
+      let recoveredName = req.vendorName;
+      if (!recoveredName && req.vendorEmail) {
+        const match = await VendorQuoteRequest.findOne({
+          vendorEmail: req.vendorEmail,
+          vendorName: { $nin: [null, ''] }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+
+        if (match) {
+          recoveredName = match.vendorName;
+        } else {
+          recoveredName = req.vendorEmail.split('@')[0];
+        }
+      }
+
+      // Add vendor quote to each product in this request
+      for (const item of (req.items || [])) {
+        const productKey = `${item.productId}::${item.variantId || ''}`;
+
+        if (!orderEntry.products.has(productKey)) {
+          orderEntry.products.set(productKey, {
+            productId: item.productId || '',
+            name: item.productName || 'Unknown Product',
+            image: item.image || '',
+            quantity: item.requestedQty || 0,
+            vendorQuotes: []
+          });
+        }
+
+        const productEntry = orderEntry.products.get(productKey);
+
+        productEntry.vendorQuotes.push({
+          requestId: req._id,
+          vendorId: req.vendorId || null,
+          vendorName: recoveredName || 'Unknown Vendor',
+          vendorEmail: req.vendorEmail || null,
+          price: item.vendorPrice ?? null,
+          message: item.vendorRemark || '',
+          status: req.status || 'pending',
+          submittedAt: req.submittedAt || req.createdAt
+        });
+      }
     }
-    
-    res.json({ success: true, quote });
+
+    // Convert map to array response
+    const result = Array.from(orderMap.values()).map(order => ({
+      _id: order._id,
+      orderId: order.orderId,
+      products: Array.from(order.products.values()),
+      createdAt: order.createdAt
+    }));
+
+    return res.status(200).json(result);
+
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('❌ Error fetching all vendor quotes:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching vendor quotes',
+      error: error.message
+    });
   }
 });
 
-// Helper function to notify admin
-async function notifyAdminNewQuote(itemId, quote) {
+// PATCH /api/vendor-quote-requests/:requestId/status - Accept or Reject a vendor's quote request
+router.patch('/vendor-quote-requests/:requestId/status', async (req, res) => {
   try {
-    // Send email notification
-    await sendEmail({
-      to: process.env.ADMIN_EMAIL,
-      subject: `New Vendor Quote for Item ${itemId}`,
-      html: `
-        <h2>New Vendor Quote Submitted</h2>
-        <p><strong>Product ID:</strong> ${itemId}</p>
-        <p><strong>Vendor:</strong> ${quote.vendorName}</p>
-        <p><strong>Email:</strong> ${quote.vendorEmail}</p>
-        <p><strong>Phone:</strong> ${quote.vendorPhone}</p>
-        <p><strong>Price:</strong> ₹${quote.quotedPrice}</p>
-        <p><strong>Remarks:</strong> ${quote.remarks || 'None'}</p>
-        <p><strong>Time:</strong> ${quote.submittedAt.toLocaleString()}</p>
-        <br>
-        <a href="${process.env.ADMIN_PANEL_URL}/vendor-quotes">View All Quotes</a>
-      `
-    });
-    
-    // Optional: Send Slack/Teams notification
-    if (process.env.SLACK_WEBHOOK_URL) {
-      await axios.post(process.env.SLACK_WEBHOOK_URL, {
-        text: `📋 New vendor quote submitted!\n*Product:* ${itemId}\n*Vendor:* ${quote.vendorName}\n*Price:* ₹${quote.quotedPrice}\n*Remarks:* ${quote.remarks || 'None'}`
+    const { requestId } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ['pending', 'submitted', 'approved', 'accepted', 'rejected'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
       });
     }
-  } catch (error) {
-    console.error('Notification error:', error.message);
-  }
-}
 
-// Helper function to send email
-async function sendEmail({ to, subject, html }) {
-  // Implement your email sending logic here
-  // Using nodemailer, sendgrid, etc.
-}
+    if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: 'Invalid request ID' });
+    }
+
+    const updated = await VendorQuoteRequest.findByIdAndUpdate(
+      requestId,
+      { status },
+      { new: true, lean: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Quote request not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Status updated to '${status}'`,
+      requestId: updated._id,
+      status: updated.status
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating vendor quote request status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error updating status',
+      error: error.message
+    });
+  }
+});
+
+// PATCH /api/vendor-quote-requests/:id - Update vendor info (name, email, phone)
+router.patch('/vendor-quote-requests/:id', vendorQuoteController.updateVendorQuoteRequest);
+
+// GET /api/vendor-quotes/:id - Get a single vendor quote by ID
+router.get('/vendor-quotes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: 'Invalid quote ID' });
+    }
+
+    // Try VendorQuoteRequest first (multi-product)
+    let requestDoc = await VendorQuoteRequest.findById(id).lean();
+
+    if (requestDoc) {
+      let recoveredVendorName = requestDoc.vendorName;
+      if (!recoveredVendorName && requestDoc.vendorEmail) {
+        const prev = await VendorQuoteRequest.findOne({
+          vendorEmail: requestDoc.vendorEmail,
+          vendorName: { $ne: null, $ne: '' }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+        if (prev) recoveredVendorName = prev.vendorName;
+        else {
+          const prevSingle = await VendorQuote.findOne({
+            vendorEmail: requestDoc.vendorEmail,
+            vendorName: { $ne: null, $ne: '' }
+          }).sort({ createdAt: -1 }).select('vendorName').lean();
+          if (prevSingle) recoveredVendorName = prevSingle.vendorName;
+          else {
+            recoveredVendorName = requestDoc.vendorEmail.split('@')[0];
+          }
+        }
+      }
+
+      const totalAmount = (requestDoc.items || [])
+        .filter(it => typeof it.vendorPrice === 'number')
+        .reduce((sum, it) => sum + it.vendorPrice * (it.requestedQty || 1), 0);
+
+      const products = (requestDoc.items || []).map(it => ({
+        productId: it.productId || '',
+        productName: it.productName || 'Unknown Product',
+        productImage: it.image || '',
+        variantName: it.variantName || 'Standard',
+        quantity: it.requestedQty || 0,
+        vendorPrice: it.vendorPrice || 0,
+        totalPrice: (it.vendorPrice || 0) * (it.requestedQty || 0),
+        vendorRemark: it.vendorRemark || ''
+      }));
+
+      return res.status(200).json({
+        success: true,
+        quoteType: 'multi',
+        quote: {
+          _id: requestDoc._id,
+          vendorName: recoveredVendorName || 'N/A',
+          vendorEmail: requestDoc.vendorEmail || 'N/A',
+          vendorPhone: requestDoc.vendorPhone || null,
+          totalAmount,
+          products,
+          status: requestDoc.status,
+          createdAt: requestDoc.createdAt,
+          submittedAt: requestDoc.submittedAt
+        }
+      });
+    }
+
+    // Fall back to VendorQuote (single product / legacy)
+    const singleQuote = await VendorQuote.findById(id).lean();
+
+    if (singleQuote) {
+      let recoveredVendorName = singleQuote.vendorName;
+      if (!recoveredVendorName && singleQuote.vendorEmail) {
+        const prev = await VendorQuote.findOne({
+          vendorEmail: singleQuote.vendorEmail,
+          vendorName: { $ne: null, $ne: '' }
+        }).sort({ createdAt: -1 }).select('vendorName').lean();
+        if (prev) recoveredVendorName = prev.vendorName;
+      }
+
+      const totalAmount = singleQuote.quotedPrice || 0;
+
+      const products = [{
+        productId: singleQuote.itemId || '',
+        productName: singleQuote.productName || 'Unknown Product',
+        productImage: singleQuote.productImage || '',
+        variantName: 'Standard',
+        quantity: 1,
+        vendorPrice: singleQuote.quotedPrice || 0,
+        totalPrice: singleQuote.quotedPrice || 0,
+        vendorRemark: singleQuote.remarks || ''
+      }];
+
+      return res.status(200).json({
+        success: true,
+        quoteType: 'single',
+        quote: {
+          _id: singleQuote._id,
+          vendorName: recoveredVendorName || 'N/A',
+          vendorEmail: singleQuote.vendorEmail || 'N/A',
+          vendorPhone: singleQuote.vendorPhone || null,
+          totalAmount,
+          products,
+          status: singleQuote.status,
+          createdAt: singleQuote.createdAt,
+          submittedAt: singleQuote.submittedAt
+        }
+      });
+    }
+
+    return res.status(404).json({ success: false, message: 'Quote not found' });
+
+  } catch (error) {
+    console.error('❌ Error fetching vendor quote by ID:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching vendor quote',
+      error: error.message
+    });
+  }
+});
+
+// ==================== ADMIN ROUTES ====================
+// These are mounted at /api, so full URLs will be:
+//   POST  /api/admin/vendor-quote-requests
+//   GET   /api/admin/vendor-quote-requests
+//   GET   /api/admin/vendor-quotes
+//   POST  /api/admin/vendor-quotes
+//   etc.
+
+// POST /api/admin/vendor-quote-requests - Multi-item quote request creation
+router.post(
+  '/admin/vendor-quote-requests',
+  requireAdmin,
+  body('orderId').trim().notEmpty().withMessage('Order ID is required'),
+  body('items')
+    .isArray({ min: 1 })
+    .withMessage('Items array is required'),
+  body('items.*.productId')
+    .trim()
+    .notEmpty()
+    .withMessage('productId is required for each item'),
+  body('items.*.requestedQty')
+    .isFloat({ min: 1 })
+    .withMessage('requestedQty must be at least 1'),
+  body('vendorId').optional().trim(),
+  body('vendorName').optional().trim(),
+  body('vendorEmail').optional().isEmail().withMessage('Invalid vendorEmail'),
+  vendorQuoteController.createMultiItemQuoteRequest
+);
+
+// GET /api/admin/vendor-quote-requests - Admin list multi-item quote requests
+router.get(
+  '/admin/vendor-quote-requests',
+  requireAdmin,
+  query('orderId').optional().trim(),
+  query('status').optional().isIn(['pending', 'submitted', 'approved', 'accepted', 'rejected']),
+  query('page').optional().isInt({ min: 1 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+  vendorQuoteController.getAdminMultiItemQuotes
+);
+
+// GET /api/vendor/quote-request/:token - Public: get multi-item quote details by token
+router.get(
+  '/vendor/quote-request/:token',
+  param('token').trim().notEmpty().withMessage('Token is required'),
+  vendorQuoteController.getMultiItemQuoteByToken
+);
+
+// POST /api/vendor/quote-request/:token/submit - Public: submit multi-item quote by token
+router.post(
+  '/vendor/quote-request/:token/submit',
+  param('token').trim().notEmpty().withMessage('Token is required'),
+  body('items')
+    .isArray({ min: 1 })
+    .withMessage('Items array is required'),
+  body('vendorName').optional().trim().isLength({ min: 2, max: 100 }),
+  body('vendorEmail').optional().trim().toLowerCase().isEmail().withMessage('Invalid vendor email'),
+  body('vendorPhone').optional().trim(),
+  vendorQuoteController.submitMultiItemQuote
+);
+
+// POST /api/admin/vendor-quotes - Submit vendor quote (supports both itemId and productId/variantId)
+router.post(
+  '/admin/vendor-quotes',
+  [
+    body('vendorName')
+      .trim()
+      .notEmpty().withMessage('Vendor name is required')
+      .isLength({ min: 2, max: 100 }).withMessage('Vendor name must be 2-100 characters'),
+    body('vendorEmail')
+      .trim()
+      .toLowerCase()
+      .isEmail().withMessage('Invalid email address'),
+    body('vendorPhone')
+      .optional()
+      .trim(),
+    body('quotedPrice')
+      .notEmpty().withMessage('Quoted price is required')
+      .isFloat({ min: 0 }).withMessage('Price must be a positive number'),
+    body('remarks')
+      .optional()
+      .trim()
+      .isLength({ max: 500 }).withMessage('Remarks cannot exceed 500 characters'),
+    body('itemId').optional().trim(),
+    body('productId').optional().trim(),
+    body('variantId').optional().trim(),
+    body('productName').optional().trim(),
+    body('productImage').optional().trim()
+  ],
+  handleValidationErrors,
+  vendorQuoteController.submitQuote
+);
+
+// NOTE: stats/summary and export/csv MUST be defined BEFORE /:quoteId
+// to prevent them from being matched as a quoteId parameter.
+
+// GET /api/admin/vendor-quotes/stats/summary - Get statistics
+router.get(
+  '/admin/vendor-quotes/stats/summary',
+  requireAdmin,
+  query('itemId').optional().trim(),
+  query('startDate').optional().isISO8601(),
+  query('endDate').optional().isISO8601(),
+  vendorQuoteController.getQuotesStatistics
+);
+
+// GET /api/admin/vendor-quotes/export/csv - Export to CSV
+router.get(
+  '/admin/vendor-quotes/export/csv',
+  requireAdmin,
+  query('itemId').optional().trim(),
+  query('status').optional().isIn(['pending', 'reviewed', 'accepted', 'rejected']),
+  vendorQuoteController.exportQuotesToCSV
+);
+
+// POST /api/admin/vendor-quotes/bulk/status - Bulk update status
+// NOTE: Also defined before /:quoteId to avoid param route conflict
+router.post(
+  '/admin/vendor-quotes/bulk/status',
+  requireAdmin,
+  body('quoteIds')
+    .isArray({ min: 1 }).withMessage('Quote IDs array required'),
+  body('quoteIds.*').isMongoId().withMessage('Invalid quote ID format'),
+  body('status')
+    .isIn(['pending', 'reviewed', 'accepted', 'rejected']).withMessage('Invalid status'),
+  vendorQuoteController.bulkUpdateStatus
+);
+
+// GET /api/admin/vendor-quotes - Get all vendor quotes (with filtering & pagination)
+router.get(
+  '/admin/vendor-quotes',
+  (req, res, next) => {
+    console.log('📍 GET /admin/vendor-quotes route hit');
+    next();
+  },
+  requireAdmin,
+  query('page').optional().isInt({ min: 1 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+  query('status').optional().isIn(['pending', 'reviewed', 'accepted', 'rejected']),
+  query('itemId').optional().trim(),
+  query('vendorName').optional().trim(),
+  query('startDate').optional().isISO8601(),
+  query('endDate').optional().isISO8601(),
+  vendorQuoteController.getAdminQuotes
+);
+
+// GET /api/admin/vendor-quotes/:quoteId - Get a specific quote
+router.get(
+  '/admin/vendor-quotes/:quoteId',
+  requireAdmin,
+  param('quoteId').isMongoId().withMessage('Invalid quote ID'),
+  vendorQuoteController.getQuoteById
+);
+
+// PATCH /api/admin/vendor-quotes/:quoteId/status - Update quote status
+router.patch(
+  '/admin/vendor-quotes/:quoteId/status',
+  requireAdmin,
+  validateStatusUpdate,
+  vendorQuoteController.updateQuoteStatus
+);
+
+// PATCH /api/admin/vendor-quotes/:quoteId/notes - Add admin notes
+router.patch(
+  '/admin/vendor-quotes/:quoteId/notes',
+  requireAdmin,
+  param('quoteId').isMongoId().withMessage('Invalid quote ID'),
+  body('adminNotes')
+    .trim()
+    .notEmpty().withMessage('Admin notes cannot be empty')
+    .isLength({ max: 1000 }).withMessage('Admin notes cannot exceed 1000 characters'),
+  vendorQuoteController.addAdminNotes
+);
+
+// DELETE /api/admin/vendor-quotes/:quoteId - Delete a quote
+router.delete(
+  '/admin/vendor-quotes/:quoteId',
+  requireAdmin,
+  param('quoteId').isMongoId().withMessage('Invalid quote ID'),
+  vendorQuoteController.deleteQuote
+);
 
 module.exports = router;
