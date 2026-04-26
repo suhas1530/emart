@@ -1,35 +1,3 @@
-// const mongoose = require("mongoose");
-
-// const subCategorySchema = new mongoose.Schema({
-//   subCategoryName: String,
-//   subCategoryImage: String,
-// });
-
-// const categorySchema = new mongoose.Schema({
-//   categoryName: String,
-//   categoryImage: String,
-//   subCategories: [subCategorySchema],
-// });
-
-// const brandSchema = new mongoose.Schema(
-//   {
-//     brandName: { type: String, required: true },
-//     brandImage: String,
-//     categories: [categorySchema],
-//     products: [
-//       {
-//         productName: String,
-//         price: Number,
-//         productImage: String,
-//       },
-//     ],
-//   },
-//   { timestamps: true }
-// );
-
-// module.exports = mongoose.model("Brand", brandSchema);
-
-
 const mongoose = require("mongoose");
 
 const subCategorySchema = new mongoose.Schema({
@@ -43,7 +11,6 @@ const categorySchema = new mongoose.Schema({
   subCategories: [subCategorySchema],
 });
 
-// Variant Schema for Product
 const variantSchema = new mongoose.Schema({
   name: { type: String, required: true },
   stock: { type: Number, required: true, default: 0 },
@@ -53,18 +20,13 @@ const variantSchema = new mongoose.Schema({
   listPrice: { type: Number, required: true },
   discount: { type: Number, default: 0 },
   profit: { type: Number, default: 0 },
-  gst: { type: Number, default: 18 },   // GST percentage (e.g. 18 means 18%)
-  tax: { type: Number, default: 18 },   // Kept for backward-compatibility with old records
+  gst: { type: Number, default: 18 },
+  tax: { type: Number, default: 18 },
   finalPrice: { type: Number, required: true }
 });
 
-// Product Schema
 const productSchema = new mongoose.Schema({
-  access: {
-    type: String,
-    enum: ["Member", "User", "Both"],
-    default: "Both"
-  },
+  access: { type: String, enum: ["Member", "User", "Both"], default: "Both" },
   brandId: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand' },
   brandName: String,
   categoryId: mongoose.Schema.Types.ObjectId,
@@ -73,25 +35,26 @@ const productSchema = new mongoose.Schema({
   subCategoryName: String,
   productName: { type: String, required: true },
   description: { type: String },
-  images: [String], // Array of image paths
-  catalog: String, // PDF/DOC file path
+  images: [String],
+  catalog: String,
   videoLink: String,
   enquiry: { type: Boolean, default: true },
   hsnCode: String,
-  variants: [variantSchema]
+  variants: [variantSchema],
+
+  // ── Mixed type so Mongoose stores null/number reliably in subdocuments ──
+secondaryThreshold: { type: Number, default: null },
+tertiaryThreshold:  { type: Number, default: null },
+
 }, { timestamps: true });
 
 const brandSchema = new mongoose.Schema(
   {
     brandName: { type: String, required: true },
     brandImage: String,
-    status: {
-      type: String,
-      enum: ["publish", "hold"],
-      default: "publish"
-    },
+    status: { type: String, enum: ["publish", "hold"], default: "publish" },
     categories: [categorySchema],
-    products: [productSchema] // Products stored under brand
+    products: [productSchema]
   },
   { timestamps: true }
 );

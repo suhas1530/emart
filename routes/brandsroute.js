@@ -1,62 +1,112 @@
+// const express = require("express");
+// const router = express.Router();
+// const upload = require("../middlewares/upload");
+// const controller = require("../controllers/brandscontroller");
+
+// router.post("/brand", upload.single("brandImage"), controller.addBrand);
+
+// router.post(
+//   "/category/:brandId",
+//   upload.single("categoryImage"),
+//   controller.addCategory
+// );
+
+// router.post(
+//   "/subcategory/:brandId/:categoryId",
+//   upload.single("subCategoryImage"),
+//   controller.addSubCategory
+// );
+
+// // DELETE
+// router.delete("/brand/:brandId", controller.deleteBrand);
+// router.delete("/category/:brandId/:categoryId", controller.deleteCategory);
+// router.delete(
+//   "/subcategory/:brandId/:categoryId/:subCategoryId",
+//   controller.deleteSubCategory
+// );
+// router.put("/brand/:brandId", upload.single("brandImage"), controller.updateBrand);
+// router.put("/category/:brandId/:categoryId", upload.single("categoryImage"), controller.updateCategory);
+// router.put("/subcategory/:brandId/:categoryId/:subCategoryId", upload.single("subCategoryImage"), controller.updateSubCategory);
+// // GET
+// router.get("/", controller.getBrands);
+
+// module.exports = router;
+// 1
+
+console.log('=== brandsroute.js LOADED ===');
 const express = require("express");
 const router = express.Router();
 const upload = require("../middleware/upload");
-const brandController = require("../controllers/brandController");
+const controller = require("../controllers/brandscontroller");
+
 
 // ==================== BRAND ROUTES ====================
-router.post("/brand", upload.single("brandImage"), brandController.addBrand);
-router.put("/brand/:brandId", upload.single("brandImage"), brandController.updateBrand);
-router.delete("/brand/:brandId", brandController.deleteBrand);
-router.get("/", brandController.getBrands);                          // supports ?status=Publish
-router.get("/brand/:brandId", brandController.getBrand);
-router.patch("/:brandId/status", brandController.updateBrandStatus); // admin toggle
+router.post("/brand", upload.single("brandImage"), controller.addBrand);
+router.put("/brand/:brandId", upload.single("brandImage"), controller.updateBrand);
+router.delete("/brand/:brandId", controller.deleteBrand);
+router.get("/", controller.getBrands);
+router.get("/brand/:brandId", controller.getBrand);
 
 // ==================== CATEGORY ROUTES ====================
-router.post("/category/:brandId", upload.single("categoryImage"), brandController.addCategory);
-router.put("/category/:brandId/:categoryId", upload.single("categoryImage"), brandController.updateCategory);
-router.delete("/category/:brandId/:categoryId", brandController.deleteCategory);
+router.post("/category/:brandId", upload.single("categoryImage"), controller.addCategory);
+router.put("/category/:brandId/:categoryId", upload.single("categoryImage"), controller.updateCategory);
+router.delete("/category/:brandId/:categoryId", controller.deleteCategory);
 
 // ==================== SUB-CATEGORY ROUTES ====================
-router.post("/subcategory/:brandId/:categoryId", upload.single("subCategoryImage"), brandController.addSubCategory);
-router.put("/subcategory/:brandId/:categoryId/:subCategoryId", upload.single("subCategoryImage"), brandController.updateSubCategory);
-router.delete("/subcategory/:brandId/:categoryId/:subCategoryId", brandController.deleteSubCategory);
+router.post("/subcategory/:brandId/:categoryId", upload.single("subCategoryImage"), controller.addSubCategory);
+router.put("/subcategory/:brandId/:categoryId/:subCategoryId", upload.single("subCategoryImage"), controller.updateSubCategory);
+router.delete("/subcategory/:brandId/:categoryId/:subCategoryId", controller.deleteSubCategory);
 
 // ==================== PRODUCT ROUTES ====================
+
+// Add product with multiple images and catalog
 router.post(
   "/product",
   upload.fields([
-    { name: "images", maxCount: 6 },
-    { name: "catalog", maxCount: 1 }
+    { name: 'images', maxCount: 6 },
+    { name: 'catalog', maxCount: 1 }
   ]),
-  brandController.addProduct
+  controller.addProduct
 );
 
-router.get("/products", brandController.getAllProducts);              // supports ?status=Publish
-router.get("/products/all", brandController.getAllProducts);          // same, for frontend compatibility
-router.get("/products/brand/:brandId", brandController.getProductsByBrand);
-router.get("/products/brand/:brandId/category/:categoryId", brandController.getProductsByCategory);
-router.get("/products/brand/:brandId/subcategory/:subCategoryId", brandController.getProductsBySubCategory);
+// Get all products (from all brands)
+router.get("/products/all", controller.getAllProducts);
+router.get("/products", controller.getAllProducts);
 
-// GET SINGLE PRODUCT — supports both /product/:brandId/:productId and /product?brandId=x&productId=y
-router.get("/product/:brandId/:productId", brandController.getProduct);
-router.get("/product", async (req, res) => {
-  const { brandId, productId } = req.query;
-  if (!brandId || !productId) {
-    return res.status(400).json({ error: "brandId and productId are required" });
-  }
-  req.params.brandId = brandId;
-  req.params.productId = productId;
-  return brandController.getProduct(req, res);
-});
+// Get products by brand
+router.get("/products/brand/:brandId", controller.getProductsByBrand);
 
+// Get products by category
+router.get("/products/brand/:brandId/category/:categoryId", controller.getProductsByCategory);
+
+// Get products by sub-category
+router.get("/products/brand/:brandId/subcategory/:subCategoryId", controller.getProductsBySubCategory);
+
+// Get single product
+router.get("/product/:brandId/:productId", controller.getProduct);
+
+// Update product
 router.put(
   "/product/:brandId/:productId",
   upload.fields([
-    { name: "images", maxCount: 6 },
-    { name: "catalog", maxCount: 1 }
+    { name: 'images', maxCount: 6 },
+    { name: 'catalog', maxCount: 1 }
   ]),
-  brandController.updateProduct
+  controller.updateProduct
 );
-router.delete("/product/:brandId/:productId", brandController.deleteProduct);
+
+// Update brand status (Publish / Hold)
+router.patch("/:brandId/status", controller.updateBrandStatus);
+
+// Delete product
+router.delete("/product/:brandId/:productId", controller.deleteProduct);
+
+// ==================== USER-FACING ROUTES (only PUBLISHED products) ====================
+
+// Get all published products (for user panel, home page, category pages)
+router.get("/products/published", controller.getPublishedProducts);
+
+// Search published products
+router.get("/products/search", controller.searchProducts);
 
 module.exports = router;
